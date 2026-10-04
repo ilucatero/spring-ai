@@ -1,0 +1,11 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring AI",
+            "request": "launch",
+            "mainClass": "${workspaceFolder}/src/main/java/com/ilucatero/springai/chat/app/Application.java"
+        }
+    ]
+}

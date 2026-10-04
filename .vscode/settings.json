@@ -1,0 +1,26 @@
+{
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-25",
+            "default": true
+        }
+    ],
+    "maven.terminal.favorites": [
+        "clean",
+        "test",
+        "package",
+        "spring-boot:run"
+    ],
+    "editor.formatOnSave": true,
+    "files.exclude": {
+        "**/.classpath": true,
+        "**/.project": true,
+        "**/.settings": true,
+        "**/target": true
+    },
+    "search.exclude": {
+        "**/target": true
+    }
+}
