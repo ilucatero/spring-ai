@@ -3,9 +3,10 @@
     "configurations": [
         {
             "type": "java",
-            "name": "Spring AI",
+            "name": "Spring AI : Chat",
             "request": "launch",
-            "mainClass": "${workspaceFolder}/src/main/java/com/ilucatero/springai/chat/app/Application.java"
+            "mainClass": "${workspaceFolder}/chat/src/main/java/com/ilucatero/springai/chat/app/Application.java",
+            "cwd": "${workspaceFolder}/chat"
         }
     ]
 }

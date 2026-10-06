@@ -1,4 +1,4 @@
-package com.example.springai.config;
+package com.ilucatero.springai.chat.config;
 
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
@@ -11,7 +11,8 @@ import org.springframework.context.annotation.Configuration;
 public class SpringAiConfig {
 
     /**
-     * In-memory store for conversation messages. Each entry is keyed by conversation ID.
+     * In-memory store for conversation messages. Each entry is keyed by
+     * conversation ID.
      * Loses all data on application restart
      */
     @Bean
@@ -20,8 +21,10 @@ public class SpringAiConfig {
     }
 
     /**
-     * Sliding-window memory keeping the most recent {@code maxMessages} per conversation.
-     * Older messages are automatically dropped so the prompt stays within model token limits.
+     * Sliding-window memory keeping the most recent {@code maxMessages} per
+     * conversation.
+     * Older messages are automatically dropped so the prompt stays within model
+     * token limits.
      */
     @Bean
     public ChatMemory chatMemory(ChatMemoryRepository chatMemoryRepository) {

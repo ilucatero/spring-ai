@@ -11,7 +11,7 @@
   <packaging>pom</packaging>
 
   <modules>
-    <module>chat</modules>
+    <module>chat</module>
   </modules>
 
   <properties>
@@ -63,6 +63,7 @@
 
       <!-- Other dependencies -->
       
+    </dependencies>
   </dependencyManagement>
 
   <!-- Shared baseline for every runnable workshop application. -->
