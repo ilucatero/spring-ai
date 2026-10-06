@@ -18,7 +18,7 @@
     <!-- Use Java 25 by default.  Override by setting the JAVA_HOME environment variable or the `java.version` property -->
     <java.version>25</java.version>
     
-    <spring.boot.version>4.0.6</spring.boot.version>
+    <spring.boot.version>4.1.1</spring.boot.version>
     <!-- Spring AI version -->
     <spring.ai.version>2.0.1</spring.ai.version>
     <!-- Must match the openai-java-core that spring-ai-openai resolves -->
