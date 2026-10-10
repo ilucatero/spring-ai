@@ -12,6 +12,7 @@
 
   <modules>
     <module>chat</module>
+    <module>chat_customer_service</module>
   </modules>
 
   <properties>
