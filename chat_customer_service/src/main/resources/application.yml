@@ -1,0 +1,32 @@
+server:
+  port: 8081
+
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: spring-ai-chat
+  ai:
+    openai:
+      base-url: ${OPENAI_ENDPOINT}
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        model: ${OPENAI_MODEL}
+
+# Spring Boot Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Logging configuration
+logging:
+  level:
+    "[com.ilucatero.springai]": INFO
+    "[org.springframework.ai]": DEBUG
+
+# Values are read from environment variables (see .env)

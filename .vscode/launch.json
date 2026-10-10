@@ -7,6 +7,13 @@
             "request": "launch",
             "mainClass": "${workspaceFolder}/chat/src/main/java/com/ilucatero/springai/chat/app/Application.java",
             "cwd": "${workspaceFolder}/chat"
-        }
+        },
+        {
+            "type": "java",
+            "name": "Spring AI : Customer Service",
+            "request": "launch",
+            "mainClass": "${workspaceFolder}/chat_customer_service/src/main/java/com/ilucatero/springai/chat_cs/app/Application.java",
+            "cwd": "${workspaceFolder}/chat_customer_service"
+        },
     ]
 }
