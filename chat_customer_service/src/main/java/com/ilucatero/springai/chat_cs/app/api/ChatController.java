@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ilucatero.springai.chat_cs.app.service.ChatCustomeRequestAnalysisService;
+import com.ilucatero.springai.chat_cs.app.services.ChatCustomeRequestAnalysisService;
 
 @RestController
 @RequestMapping("/api/chat")

@@ -1,9 +1,9 @@
-package com.ilucatero.springai.chat_cs.app.service;
+package com.ilucatero.springai.chat_cs.app.services;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
-import com.ilucatero.springai.chat_cs.app.model.CustomerRequestAnalysis;
+import com.ilucatero.springai.chat_cs.app.models.CustomerRequestAnalysis;
 
 /**
  * Service for analyzing customer requests using AI. It sends the request to

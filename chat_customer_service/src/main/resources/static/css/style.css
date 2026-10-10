@@ -198,16 +198,20 @@ header p {
   background: #f8f9fa;
 }
 
-.chat-form input {
+.chat-form input,
+.chat-form textarea {
   flex: 1;
   padding: 10px 15px;
   border: 1px solid #ced4da;
   border-radius: 5px;
   font-size: 1rem;
+  font-family: inherit;
   outline: none;
+  resize: vertical;
 }
 
-.chat-form input:focus {
+.chat-form input:focus,
+.chat-form textarea:focus {
   border-color: #007bff;
 }
 
