@@ -1,4 +1,4 @@
-package com.ilucatero.springai.chat_cs.app.services;
+package com.ilucatero.springai.chat_cs.app.service;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,11 +21,12 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireAnalysis;
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireReply.Status;
-import com.ilucatero.springai.chat_cs.app.repositories.ConversationFlowRepository;
-import com.ilucatero.springai.chat_cs.app.repositories.ConversationRepository;
-import com.ilucatero.springai.chat_cs.app.repositories.PendingQuestionnairesRepository;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireAnalysis;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireReply.Status;
+import com.ilucatero.springai.chat_cs.app.repository.ConversationFlowRepository;
+import com.ilucatero.springai.chat_cs.app.repository.ConversationRepository;
+import com.ilucatero.springai.chat_cs.app.repository.PendingQuestionnairesRepository;
+import com.ilucatero.springai.chat_cs.app.repository.QuestionnaireRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -94,7 +95,7 @@ class SimpleConversationTest {
                 new ConversationRepository<>(),
                 new PendingQuestionnairesRepository(),
                 new ConversationFlowRepository(),
-                new FluxQuestionnaireService());
+                new FluxQuestionnaireService(new QuestionnaireRepository()));
     }
 
     private String startGenerationConversation() {

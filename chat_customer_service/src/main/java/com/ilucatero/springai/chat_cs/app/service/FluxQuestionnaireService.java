@@ -1,4 +1,4 @@
-package com.ilucatero.springai.chat_cs.app.services;
+package com.ilucatero.springai.chat_cs.app.service;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -6,19 +6,27 @@ import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
 
+import com.ilucatero.springai.chat_cs.app.repository.QuestionnaireRepository;
+
 @Service
 public class FluxQuestionnaireService {
 
     private static final Pattern QUESTION_MARKER = Pattern.compile("^(?:\\d+[.)]|[*-])\\s+(.+?)\\s*$");
 
+    private final QuestionnaireRepository questionnaireRepository;
+
+    public FluxQuestionnaireService(QuestionnaireRepository questionnaireRepository) {
+        this.questionnaireRepository = questionnaireRepository;
+    }
+
     /**
-     * Creates a manual questionnaire from the given input string.
+     * extract questionnaire lines from the given input string.
      *
      * @param input the input string containing the title and questions
      * @return a list of strings representing the title (0) and questions (1..n)
      * @throws IllegalArgumentException if the input format is invalid
      */
-    public List<String> createManualQuestionnaire(String input) {
+    public List<String> extractQuestionnaireLines(String input) {
         var lines = new ArrayList<String>();
         for (var line : input.split("\\R")) {
             var trimmedLine = line.trim();
@@ -49,5 +57,20 @@ public class FluxQuestionnaireService {
         }
 
         return questionnaire;
+    }
+
+    /**
+     * Persist the questionnaire in the repository.
+     *
+     * @param id        the unique identifier for the questionnaire
+     * @param title     the title of the questionnaire
+     * @param questions the list of questions in the questionnaire
+     * @throws IllegalArgumentException if the list of questions is empty
+     */
+    public void persistQuestionnaire(int id, String title, List<String> questions) {
+        if (questions.isEmpty()) {
+            throw new IllegalArgumentException("Questionnaire cannot be empty.");
+        }
+        questionnaireRepository.save(title, questions);
     }
 }

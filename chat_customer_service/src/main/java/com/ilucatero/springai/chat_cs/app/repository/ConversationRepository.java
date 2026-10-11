@@ -1,4 +1,4 @@
-package com.ilucatero.springai.chat_cs.app.repositories;
+package com.ilucatero.springai.chat_cs.app.repository;
 
 import java.util.List;
 import java.util.Set;

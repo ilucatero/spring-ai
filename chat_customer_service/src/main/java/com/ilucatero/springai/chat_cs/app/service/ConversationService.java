@@ -1,7 +1,6 @@
-package com.ilucatero.springai.chat_cs.app.services;
+package com.ilucatero.springai.chat_cs.app.service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.ai.chat.client.ChatClient;
@@ -12,14 +11,14 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireAnalysis;
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireGeneration;
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireReply;
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireReply.Status;
-import com.ilucatero.springai.chat_cs.app.repositories.ConversationFlowRepository;
-import com.ilucatero.springai.chat_cs.app.repositories.ConversationFlowRepository.Stage;
-import com.ilucatero.springai.chat_cs.app.repositories.ConversationRepository;
-import com.ilucatero.springai.chat_cs.app.repositories.PendingQuestionnairesRepository;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireAnalysis;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireGeneration;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireReply;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireReply.Status;
+import com.ilucatero.springai.chat_cs.app.repository.ConversationFlowRepository;
+import com.ilucatero.springai.chat_cs.app.repository.ConversationFlowRepository.Stage;
+import com.ilucatero.springai.chat_cs.app.repository.ConversationRepository;
+import com.ilucatero.springai.chat_cs.app.repository.PendingQuestionnairesRepository;
 
 @Service
 public class ConversationService {
@@ -64,14 +63,14 @@ public class ConversationService {
     private final ConversationRepository<String> conversationRepository;
     private final PendingQuestionnairesRepository pendingQuestionnaires;
     private final ConversationFlowRepository conversationFlow;
-    private final FluxQuestionnaireService questionnaireService;
+    private final FluxQuestionnaireService fluxQuestionnaireService;
 
     public ConversationService(ChatClient.Builder chatClientBuilder,
             ChatMemory chatMemory,
             ConversationRepository<String> conversationRepository,
             PendingQuestionnairesRepository pendingQuestionnaires,
             ConversationFlowRepository conversationFlow,
-            FluxQuestionnaireService questionnaireService) {
+            FluxQuestionnaireService fluxQuestionnaireService) {
 
         this.chatClient = chatClientBuilder
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
@@ -80,7 +79,7 @@ public class ConversationService {
         this.conversationRepository = conversationRepository;
         this.pendingQuestionnaires = pendingQuestionnaires;
         this.conversationFlow = conversationFlow;
-        this.questionnaireService = questionnaireService;
+        this.fluxQuestionnaireService = fluxQuestionnaireService;
     }
 
     /**
@@ -190,7 +189,7 @@ public class ConversationService {
 
         QuestionnaireAnalysis questionnaire;
         try {
-            var lines = questionnaireService.createManualQuestionnaire(input);
+            var lines = fluxQuestionnaireService.extractQuestionnaireLines(input);
             // add title as the first element and questions as the rest of the list
             questionnaire = new QuestionnaireAnalysis(lines.get(0), List.copyOf(lines.subList(1, lines.size())));
         } catch (IllegalArgumentException e) {
@@ -227,14 +226,7 @@ public class ConversationService {
 
         return switch (decision.trim().toUpperCase()) {
             case "APPROVE" -> {
-                chatMemory.add(conversationId, List.of(
-                        new UserMessage("Approve questionnaire"),
-                        new AssistantMessage("Questionnaire created successfully."),
-                        new AssistantMessage(MODE_SELECTION_PROMPT)));
-                pendingQuestionnaires.delete(conversationId);
-                conversationFlow.setStage(conversationId, Stage.IDLE);
-                yield new QuestionnaireReply(Status.CREATED, "Questionnaire created successfully.",
-                        pendingQuestionnaire);
+                yield decideApprove(conversationId,pendingQuestionnaire);
             }
             case "REGENERATE" -> {
                 var instruction = USR_REGENERATE_INSTRUCTION_TEMPLATE.formatted(pendingQuestionnaire);
@@ -269,8 +261,48 @@ public class ConversationService {
         return pendingQuestionnaires.get(conversationId) != null;
     }
 
+    /**
+     * Gets the current stage of the conversation for the given conversation ID.
+     *
+     * @param conversationId the conversation ID
+     * @return the current stage of the conversation
+     */
     public Stage getStage(String conversationId) {
         return conversationFlow.getStage(conversationId);
+    }
+
+    /**
+     * Gets the chat history for the given conversation ID.
+     *
+     * @param conversationId the conversation ID
+     * @return a list of {@link Message} objects representing the chat history
+     */
+    public List<Message> getHistory(String conversationId) {
+        return chatMemory.get(conversationId);
+    }
+
+    /**
+     * Clears the chat history, conversation data, and pending questionnaires for
+     * the
+     * given conversation ID.
+     *
+     * @param conversationId the conversation ID
+     */
+    public void clearConversation(String conversationId) {
+        chatMemory.clear(conversationId);
+        conversationRepository.delete(conversationId);
+        pendingQuestionnaires.delete(conversationId);
+        conversationFlow.delete(conversationId);
+    }
+
+    /**
+     * Checks if a conversation exists for the given conversation ID.
+     *
+     * @param conversationId the conversation ID
+     * @return true if the conversation exists, false otherwise
+     */
+    public boolean conversationExists(String conversationId) {
+        return conversationRepository.findAll().contains(conversationId);
     }
 
     private QuestionnaireGeneration generateQuestionnaire(String conversationId, String message) {
@@ -313,18 +345,19 @@ public class ConversationService {
                 questionnaire);
     }
 
-    public List<Message> getHistory(String conversationId) {
-        return chatMemory.get(conversationId);
-    }
-
-    public void clearConversation(String conversationId) {
-        chatMemory.clear(conversationId);
-        conversationRepository.delete(conversationId);
+    private QuestionnaireReply decideApprove(String conversationId, QuestionnaireAnalysis pendingQuestionnaire) {
+        chatMemory.add(conversationId, List.of(
+                new UserMessage("Approve questionnaire"),
+                new AssistantMessage("Questionnaire created successfully."),
+                new AssistantMessage(MODE_SELECTION_PROMPT)));
         pendingQuestionnaires.delete(conversationId);
-        conversationFlow.delete(conversationId);
-    }
+        conversationFlow.setStage(conversationId, Stage.IDLE);
 
-    public boolean conversationExists(String conversationId) {
-        return conversationRepository.findAll().contains(conversationId);
+        // store the approved questionnaire in the repository using the conversationId's hash code as the ID
+        fluxQuestionnaireService.persistQuestionnaire(conversationId.hashCode(), pendingQuestionnaire.title(),
+                pendingQuestionnaire.questions());
+
+        return new QuestionnaireReply(Status.CREATED, "Questionnaire created successfully.",
+                pendingQuestionnaire);
     }
 }

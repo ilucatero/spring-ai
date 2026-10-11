@@ -1,6 +1,5 @@
 package com.ilucatero.springai.chat_cs.app.api;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -13,7 +12,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ilucatero.springai.chat_cs.app.services.ConversationService;
+import com.ilucatero.springai.chat_cs.app.mapper.ChatConversationResponseMapper;
+import com.ilucatero.springai.chat_cs.app.service.ConversationService;
 
 @RestController
 @RequestMapping("/api/conversation")
@@ -32,17 +32,20 @@ public class ConversationController {
      * @return ResponseEntity containing the conversation ID and welcome message
      */
     @PostMapping("/start")
-    public ResponseEntity<Map<String, String>> startConversation() {
+    public ResponseEntity<Map<String, Object>> startConversation() {
         try {
             var conversationId = conversationService.startConversation();
-            return ResponseEntity.ok(Map.of(
-                    "conversationId", conversationId,
-                    "message", conversationService.getHistory(conversationId).get(0).getText(),
-                    "choicePrompt", ConversationService.MODE_SELECTION_PROMPT,
-                    "stage", conversationService.getStage(conversationId).name()));
+            return ResponseEntity.ok(
+                    ChatConversationResponseMapper.toChatStartResponse(
+                            conversationId,
+                            conversationService.getHistory(conversationId).get(0).getText(),
+                            ConversationService.MODE_SELECTION_PROMPT,
+                            conversationService.getStage(conversationId).name()));
+
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Unknown error"));
+                    .body(ChatConversationResponseMapper.toErrorResponse(null,
+                            e.getMessage() != null ? e.getMessage() : "Unknown error"));
         }
     }
 
@@ -63,38 +66,37 @@ public class ConversationController {
 
         if (conversationId == null || conversationId.isBlank()) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "conversationId is required"));
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                            "conversationId is required"));
         }
 
         if ((decision != null ? 1 : 0) + (mode != null ? 1 : 0) > 1) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Only one of decision or mode may be provided"));
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                            "Only one of decision or mode may be provided"));
         }
 
         if (decision == null && mode == null && message.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "message, decision, or mode is required"));
+            return ResponseEntity.badRequest()
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                            "message, decision, or mode is required"));
         }
 
         try {
+            // Process the chat message or decision and return the mapped reply
             var reply = conversationService.processChatFlux(mode, conversationId, decision, message);
+            return ResponseEntity.ok(ChatConversationResponseMapper.toChatResponse(reply, conversationId));
 
-            var response = new LinkedHashMap<String, Object>();
-            response.put("conversationId", conversationId);
-            response.put("status", reply.status());
-            response.put("message", reply.message());
-            if (reply.questionnaire() != null) {
-                response.put("answer", reply.questionnaire());
-            }
-            return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.badRequest()
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId, e.getMessage()));
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId, e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of(
-                            "conversationId", conversationId,
-                            "error", e.getMessage() != null ? e.getMessage() : "Unknown error"));
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                            e.getMessage() != null ? e.getMessage() : "Unknown error"));
         }
     }
 
@@ -107,22 +109,30 @@ public class ConversationController {
      */
     @GetMapping("/{conversationId}/history")
     public ResponseEntity<Map<String, Object>> getHistory(@PathVariable String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                            "conversationId is required"));
+        }
+
         try {
             if (!conversationService.conversationExists(conversationId)) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("error", "Conversation not found"));
+                        .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                                "Conversation not found"));
             }
 
             var history = conversationService.getHistory(conversationId);
-            return ResponseEntity.ok(Map.of(
-                    "conversationId", conversationId,
-                    "messageCount", history.size(),
-                    "messages", history,
-                    "awaitingDecision", conversationService.isAwaitingDecision(conversationId),
-                    "stage", conversationService.getStage(conversationId).name()));
+            return ResponseEntity.ok(ChatConversationResponseMapper.toHistoryResponse(
+                    history,
+                    conversationId,
+                    conversationService.isAwaitingDecision(conversationId),
+                    conversationService.getStage(conversationId).name()));
+
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Unknown error"));
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                            e.getMessage() != null ? e.getMessage() : "Unknown error"));
         }
     }
 
@@ -133,15 +143,18 @@ public class ConversationController {
      * @return ResponseEntity containing a success message and the conversation ID
      */
     @DeleteMapping("/{conversationId}")
-    public ResponseEntity<Map<String, String>> clearConversation(@PathVariable String conversationId) {
+    public ResponseEntity<Map<String, Object>> clearConversation(@PathVariable String conversationId) {
         try {
             conversationService.clearConversation(conversationId);
             return ResponseEntity.ok(Map.of(
                     "message", "Conversation cleared successfully",
                     "conversationId", conversationId));
+
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Unknown error"));
+                    .body(ChatConversationResponseMapper.toErrorResponse(conversationId,
+                            e.getMessage() != null ? e.getMessage() : "Unknown error"));
+
         }
     }
 

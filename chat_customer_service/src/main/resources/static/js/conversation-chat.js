@@ -48,6 +48,7 @@ if (savedConversationId) {
       localStorage.removeItem('conversationId');
       conversationId = null;
       disableChat();
+      addMessage('error', error.message);
     });
 
 }
@@ -128,7 +129,7 @@ chatForm.addEventListener('submit', async (e) => {
     if (response.ok) {
       renderQuestionnaireReply(data);
     } else {
-      addMessage('error', data.error || 'An error occurred');
+      addMessage('error', data.errorMessage || 'An error occurred');
     }
   } catch (error) {
     removeLoadingMessage(loadingId);
@@ -289,7 +290,7 @@ async function selectMode(mode, label) {
       awaitingModeSelection = false;
       renderQuestionnaireReply(data);
     } else {
-      addMessage('error', data.error || 'An error occurred');
+      addMessage('error', data.errorMessage || 'An error occurred');
       modeOptions.querySelectorAll('button').forEach(button => {
         button.disabled = false;
       });
@@ -326,7 +327,7 @@ async function sendDecision(decision) {
     if (response.ok) {
       renderQuestionnaireReply(data);
     } else {
-      addMessage('error', data.error || 'An error occurred');
+      addMessage('error', data.errorMessage || 'An error occurred');
       decisionOptions.querySelectorAll('button').forEach(button => {
         button.disabled = false;
       });
@@ -341,20 +342,15 @@ async function sendDecision(decision) {
 }
 
 async function loadHistory(convId) {
-  try {
-    const response = await fetch(`/api/conversation/${convId}/history`);
-    if (response.status === 404) {
-      throw new Error('Conversation not found');
-    }
-    const json = await response.json();
-    if (!json) {
-      throw new Error('Conversation not found');
-    }
-    return json;
-
-  } catch (error) {
-    console.error('Failed to load history:', error);
+  const response = await fetch(`/api/conversation/${convId}/history`);
+  if (response.status === 404) {
+    throw new Error('Conversation not found');
   }
+  const json = await response.json();
+  if (!json || (json.status && json.status === 'error')) {
+    throw new Error('Conversation not found: ' + (json.errorMessage ?? ''));
+  }
+  return json;
 }
 async function showHistory(data) {
   try {

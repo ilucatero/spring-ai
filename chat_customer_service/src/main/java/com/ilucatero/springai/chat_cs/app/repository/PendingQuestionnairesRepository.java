@@ -1,11 +1,11 @@
-package com.ilucatero.springai.chat_cs.app.repositories;
+package com.ilucatero.springai.chat_cs.app.repository;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Repository;
 
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireAnalysis;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireAnalysis;
 
 /** In-memory repository backed by a thread-safe set. */
 @Repository

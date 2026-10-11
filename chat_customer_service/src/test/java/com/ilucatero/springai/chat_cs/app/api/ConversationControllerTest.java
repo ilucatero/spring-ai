@@ -8,10 +8,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireReply;
-import com.ilucatero.springai.chat_cs.app.models.QuestionnaireReply.Status;
-import com.ilucatero.springai.chat_cs.app.repositories.ConversationFlowRepository.Stage;
-import com.ilucatero.springai.chat_cs.app.services.ConversationService;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireReply;
+import com.ilucatero.springai.chat_cs.app.model.QuestionnaireReply.Status;
+import com.ilucatero.springai.chat_cs.app.repository.ConversationFlowRepository.Stage;
+import com.ilucatero.springai.chat_cs.app.service.ConversationService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -68,7 +68,7 @@ class ConversationControllerTest {
     @Test
     void routesDecisionThroughConversationFlux() {
         var conversationId = "conversation-4";
-        var questionnaire = new com.ilucatero.springai.chat_cs.app.models.QuestionnaireAnalysis(
+        var questionnaire = new com.ilucatero.springai.chat_cs.app.model.QuestionnaireAnalysis(
                 "Customer feedback", java.util.List.of("What can we improve?"));
         when(conversationService.processChatFlux(null, conversationId, "APPROVE", ""))
                 .thenReturn(new QuestionnaireReply(
@@ -97,7 +97,8 @@ class ConversationControllerTest {
                 "decision", "APPROVE"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).containsEntry("error", "Only one of decision or mode may be provided");
+        assertThat(response.getBody()).containsEntry("status", "error");
+        assertThat(response.getBody()).containsEntry("errorMessage", "Only one of decision or mode may be provided");
     }
 
     @Test
@@ -107,7 +108,8 @@ class ConversationControllerTest {
         var response = controller.chat(Map.of("conversationId", "conversation-6"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).containsEntry("error", "message, decision, or mode is required");
+        assertThat(response.getBody()).containsEntry("status", "error");
+        assertThat(response.getBody()).containsEntry("errorMessage", "message, decision, or mode is required");
     }
 
     @Test
