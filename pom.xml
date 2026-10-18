@@ -1,24 +1,25 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  
+
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.ilucatero.spring-ai</groupId>
   <artifactId>spring-ai</artifactId>
   <version>1.0.0</version>
-  
+
   <packaging>pom</packaging>
 
   <modules>
     <module>chat</module>
     <module>chat_customer_service</module>
+    <module>chat_customer_service_advanced</module>
   </modules>
 
   <properties>
     <!-- Use Java 25 by default.  Override by setting the JAVA_HOME environment variable or the `java.version` property -->
     <java.version>25</java.version>
-    
+
     <spring.boot.version>4.1.1</spring.boot.version>
     <!-- Spring AI version -->
     <spring.ai.version>2.0.1</spring.ai.version>
@@ -46,7 +47,7 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-      
+
       <!-- Import Spring Boot dependency versions -->
       <dependency>
         <groupId>org.springframework.boot</groupId>
@@ -63,7 +64,7 @@
       </dependency>
 
       <!-- Other dependencies -->
-      
+
     </dependencies>
   </dependencyManagement>
 

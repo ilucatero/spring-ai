@@ -1,19 +1,26 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "java",
-            "name": "Spring AI : Chat",
-            "request": "launch",
-            "mainClass": "${workspaceFolder}/chat/src/main/java/com/ilucatero/springai/chat/app/Application.java",
-            "cwd": "${workspaceFolder}/chat"
-        },
-        {
-            "type": "java",
-            "name": "Spring AI : Customer Service",
-            "request": "launch",
-            "mainClass": "${workspaceFolder}/chat_customer_service/src/main/java/com/ilucatero/springai/chat_cs/app/Application.java",
-            "cwd": "${workspaceFolder}/chat_customer_service"
-        },
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Spring AI : Chat",
+      "request": "launch",
+      "mainClass": "${workspaceFolder}/chat/src/main/java/com/ilucatero/springai/chat/app/Application.java",
+      "cwd": "${workspaceFolder}/chat"
+    },
+    {
+      "type": "java",
+      "name": "Spring AI : Customer Service",
+      "request": "launch",
+      "mainClass": "${workspaceFolder}/chat_customer_service/src/main/java/com/ilucatero/springai/chat_cs/app/Application.java",
+      "cwd": "${workspaceFolder}/chat_customer_service"
+    },
+    {
+      "type": "java",
+      "name": "Spring AI : Customer Service Advanced",
+      "request": "launch",
+      "mainClass": "${workspaceFolder}/chat_customer_service_advanced/src/main/java/com/ilucatero/springai/chat_cs_adv/app/Application.java",
+      "cwd": "${workspaceFolder}/chat_customer_service_advanced"
+    },
+  ]
 }

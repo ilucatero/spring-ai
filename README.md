@@ -7,3 +7,4 @@ An end-to-end curriculum of AI applications, having as base framework Java/Sprin
 
 * [Chat](./chat/README.md)
 * [Chat Customer Support Service](./chat_customer_service/README.md)
+* [Chat Customer Service Advanced](./chat_customer_service_advanced/README.md)
