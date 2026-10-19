@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Service with AI Tools</title>
+
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 AI Customer Service with Tools</h1>
+      <p>Ask the AI agent questions about your needs on Customer Service</p>
+    </div>
+
+    <!-- Quick Tools Section -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-icon">⚡</span>
+        <h2>Quick Tool Examples</h2>
+      </div>
+      <div class="section-body">
+        <p class="help-text">Click on any example to try it out:</p>
+
+        <div class="examples-grid">
+          <div class="example-card" onclick="tryExample('What is the status of Order 123?')">
+            <div class="example-icon">📦</div>
+            <div class="example-text">Order Status</div>
+            <div class="example-tool">Order Management</div>
+          </div>
+
+          <div class="example-card" onclick="tryExample('Has order 456 been delivered?')">
+            <div class="example-icon">🌤️</div>
+            <div class="example-text">Order Delivery Status</div>
+            <div class="example-tool">Order Management</div>
+          </div>
+
+          <div class="example-card" onclick="tryExample('Give the details of the 456 order?')">
+            <div class="example-icon">📦</div>
+            <div class="example-text">Order Details</div>
+            <div class="example-tool">Order Management</div>
+          </div>
+
+          <div class="example-card" onclick="tryExample('When my order arrive?')">
+            <div class="example-icon">📅</div>
+            <div class="example-text">Order Arrival Time</div>
+            <div class="example-tool">Order Management</div>
+          </div>
+
+          <div class="example-card" onclick="tryExample('Cancel order 999 and refund the amount')">
+            <div class="example-icon">🗑️</div>
+            <div class="example-text">Cancel Order</div>
+            <div class="example-tool">Order Management</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Section -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-icon">💬</span>
+        <h2>Chat with AI Agent</h2>
+      </div>
+      <div class="section-body">
+        <p class="help-text">Ask the agent anything that requires order status checks or calendar scheduling</p>
+
+        <div class="chat-container" id="chatContainer">
+          <div class="welcome-message">
+            <div class="bot-icon">🤖</div>
+            <div class="message-text">
+              <strong>AI Agent Ready!</strong><br>
+              I can help you with:
+              <ul>
+                <li>Order status checks</li>
+                <li>Calendar scheduling</li>
+              </ul>
+              Try asking me something like "What is the status of order 123?" or "Schedule a meeting for tomorrow at
+              10AM"
+            </div>
+          </div>
+        </div>
+
+        <div class="input-container">
+          <textarea id="messageInput" placeholder="Ask me to check order status or schedule a meeting..."
+            rows="2"></textarea>
+
+          <button id="sendButton" class="btn btn-primary">
+            <span class="btn-icon">📤</span> Send
+          </button>
+
+          <button id="clearButton" class="btn btn-secondary">
+            <span class="btn-icon">🗑️</span> Clear Chat
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script th:src="@{/js/markdown.js}"></script>
+  <script th:src="@{/js/conversation-chat-advanced.js(v=3)}"></script>
+</body>
+
+</html>
