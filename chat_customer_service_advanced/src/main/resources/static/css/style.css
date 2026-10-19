@@ -247,6 +247,29 @@ body {
   color: #3498db;
 }
 
+.cancellation-confirmation {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #f0ad4e;
+  border-radius: 8px;
+  background: #fff8e8;
+}
+
+.cancellation-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.btn-danger {
+  background: #c0392b;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #a93226;
+}
+
 .loading-indicator {
   display: flex;
   align-items: center;

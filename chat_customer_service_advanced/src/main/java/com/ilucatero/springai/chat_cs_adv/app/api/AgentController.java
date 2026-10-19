@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ilucatero.springai.chat_cs_adv.app.service.AgentService;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
+import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 
 @RestController
 @RequestMapping("/api/conversation")
@@ -24,6 +25,7 @@ public class AgentController {
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
 
     private static final int MAX_MESSAGE_LENGTH = 1000;
+    private static final String CONFIRMATION_EXPIRED = "confirmation_expired";
 
     private final AgentService agentService;
 
@@ -80,14 +82,7 @@ public class AgentController {
             var agentRequest = new AgentRequest(message, sessionId, true);
             var response = agentService.executeTask(agentRequest);
 
-            var body = new LinkedHashMap<String, Object>();
-            body.put("sessionId", response.sessionId());
-            body.put("answer", response.answer());
-            body.put("toolExecutions", response.toolExecutions());
-            body.put("toolsUsed", response.toolExecutions().size());
-            body.put("status", response.status());
-
-            return ResponseEntity.ok(body);
+            return ResponseEntity.ok(responseBody(response));
 
         } catch (Exception e) {
             log.error("Agent chat failed", e);
@@ -95,6 +90,48 @@ public class AgentController {
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to process message"));
         }
+    }
+
+    @PostMapping("/session/{sessionId}/cancellation/confirm")
+    public ResponseEntity<Map<String, Object>> confirmCancellation(
+            @PathVariable String sessionId,
+            @RequestBody Map<String, String> request) {
+        var confirmationId = request.get("confirmationId");
+        if (confirmationId == null || confirmationId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Confirmation ID is required"));
+        }
+        return cancellationResponse(agentService.confirmCancellation(sessionId, confirmationId));
+    }
+
+    @PostMapping("/session/{sessionId}/cancellation/decline")
+    public ResponseEntity<Map<String, Object>> declineCancellation(
+            @PathVariable String sessionId,
+            @RequestBody Map<String, String> request) {
+        var confirmationId = request.get("confirmationId");
+        if (confirmationId == null || confirmationId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Confirmation ID is required"));
+        }
+        return cancellationResponse(agentService.declineCancellation(sessionId, confirmationId));
+    }
+
+    private ResponseEntity<Map<String, Object>> cancellationResponse(AgentResponse response) {
+        var body = responseBody(response);
+        return CONFIRMATION_EXPIRED.equals(response.status())
+                ? ResponseEntity.status(HttpStatus.CONFLICT).body(body)
+                : ResponseEntity.ok(body);
+    }
+
+    private Map<String, Object> responseBody(AgentResponse response) {
+        var body = new LinkedHashMap<String, Object>();
+        body.put("sessionId", response.sessionId());
+        body.put("answer", response.answer());
+        body.put("toolExecutions", response.toolExecutions());
+        body.put("toolsUsed", response.toolExecutions().size());
+        body.put("status", response.status());
+        if (response.pendingCancellation() != null) {
+            body.put("pendingCancellation", response.pendingCancellation());
+        }
+        return body;
     }
 
     /**

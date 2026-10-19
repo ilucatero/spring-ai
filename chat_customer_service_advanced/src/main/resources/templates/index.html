@@ -26,28 +26,34 @@
         <p class="help-text">Click on any example to try it out:</p>
 
         <div class="examples-grid">
-          <div class="example-card" onclick="tryExample('Convert 100°F to Celsius')">
-            <div class="example-icon">🌡️</div>
-            <div class="example-text">Convert 100°F to Celsius</div>
-            <div class="example-tool">Temperature: Conversion</div>
+          <div class="example-card" onclick="tryExample('What is the status of Order 123?')">
+            <div class="example-icon">📦</div>
+            <div class="example-text">Order Status</div>
+            <div class="example-tool">Order Management</div>
           </div>
 
-          <div class="example-card" onclick="tryExample('What is 25°C in Fahrenheit?')">
-            <div class="example-icon">🌡️</div>
-            <div class="example-text">What is 25°C in Fahrenheit?</div>
-            <div class="example-tool">Temperature: Conversion</div>
-          </div>
-
-          <div class="example-card" onclick="tryExample('What is the weather in Seattle?')">
+          <div class="example-card" onclick="tryExample('Has order 456 been delivered?')">
             <div class="example-icon">🌤️</div>
-            <div class="example-text">Weather in Seattle?</div>
-            <div class="example-tool">Weather: Current</div>
+            <div class="example-text">Order Delivery Status</div>
+            <div class="example-tool">Order Management</div>
           </div>
 
-          <div class="example-card" onclick="tryExample('Get the 5-day forecast for Tokyo')">
+          <div class="example-card" onclick="tryExample('Give the details of the 456 order?')">
+            <div class="example-icon">📦</div>
+            <div class="example-text">Order Details</div>
+            <div class="example-tool">Order Management</div>
+          </div>
+
+          <div class="example-card" onclick="tryExample('When my order arrive?')">
             <div class="example-icon">📅</div>
-            <div class="example-text">5-day forecast Tokyo</div>
-            <div class="example-tool">Weather: Forecast</div>
+            <div class="example-text">Order Arrival Time</div>
+            <div class="example-tool">Order Management</div>
+          </div>
+
+          <div class="example-card" onclick="tryExample('Cancel order 999 and refund the amount')">
+            <div class="example-icon">🗑️</div>
+            <div class="example-text">Cancel Order</div>
+            <div class="example-tool">Order Management</div>
           </div>
 
         </div>
@@ -61,7 +67,7 @@
         <h2>Chat with AI Agent</h2>
       </div>
       <div class="section-body">
-        <p class="help-text">Ask the agent anything that requires temperature conversions or weather information</p>
+        <p class="help-text">Ask the agent anything that requires order status checks or calendar scheduling</p>
 
         <div class="chat-container" id="chatContainer">
           <div class="welcome-message">
@@ -70,19 +76,17 @@
               <strong>AI Agent Ready!</strong><br>
               I can help you with:
               <ul>
-                <li>Temperature conversions (Celsius ↔ Fahrenheit ↔ Kelvin)</li>
-                <li>Current weather information for any city</li>
-                <li>Weather forecasts (up to 7 days)</li>
-                <li>Chaining tools together (e.g., "What's the weather in Seattle and convert it to Fahrenheit")</li>
+                <li>Order status checks</li>
+                <li>Calendar scheduling</li>
               </ul>
-              Try asking me something like "Convert 100°F to Celsius" or "What's the weather in Paris and convert it to
-              Fahrenheit?"
+              Try asking me something like "What is the status of order 123?" or "Schedule a meeting for tomorrow at
+              10AM"
             </div>
           </div>
         </div>
 
         <div class="input-container">
-          <textarea id="messageInput" placeholder="Ask me to convert temperatures or check the weather..."
+          <textarea id="messageInput" placeholder="Ask me to check order status or schedule a meeting..."
             rows="2"></textarea>
 
           <button id="sendButton" class="btn btn-primary">
@@ -99,7 +103,7 @@
   </div>
 
   <script th:src="@{/js/markdown.js}"></script>
-  <script th:src="@{/js/conversation-chat-advanced.js(v=2)}"></script>
+  <script th:src="@{/js/conversation-chat-advanced.js(v=3)}"></script>
 </body>
 
 </html>

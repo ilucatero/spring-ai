@@ -1,6 +1,7 @@
 package com.ilucatero.springai.chat_cs_adv.app.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,24 +17,32 @@ import org.springframework.stereotype.Service;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
+import com.ilucatero.springai.chat_cs_adv.app.model.CancellationConfirmation;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
-import com.ilucatero.springai.chat_cs_adv.app.tool.TemperatureTool;
-import com.ilucatero.springai.chat_cs_adv.app.tool.WeatherTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 
 @Service
 public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
+    private static final String ORDER_NOT_FOUND = "ORDER_NOT_FOUND";
+    private static final String DELIVERED = "DELIVERED";
+    private static final String SHIPPED = "SHIPPED";
+    private static final String DELIVERY_DETAILS_NOT_FOUND = "DELIVERY_DETAILS_NOT_FOUND";
+    private static final String CONFIRMATION_EXPIRED = "confirmation_expired";
 
     private final ChatClient chatClient;
     private final ChatMemory chatMemory;
 
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
-    private final WeatherTool weatherTool;
-    private final TemperatureTool temperatureTool;
+    private final OrderDeliveranceTool orderDeliveranceTool;
+    private final OrderStatusTool orderStatusTool;
+    private final OrderCancelationTool orderCancelationTool;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
-
+    private final Map<String, CancellationConfirmation> pendingCancellations = new ConcurrentHashMap<>();
 
     /**
      * Constructor with auto-wired ChatClient.Builder.
@@ -46,8 +55,9 @@ public class AgentService {
         this.chatMemory = chatMemory;
 
         this.toolExecutionRecorder = new ToolExecutionInfo.Recorder();
-        this.weatherTool = new WeatherTool(toolExecutionRecorder);
-        this.temperatureTool = new TemperatureTool(toolExecutionRecorder);
+        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder);
+        this.orderStatusTool = new OrderStatusTool(toolExecutionRecorder);
+        this.orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder);
 
         log.info("Agent service initialized with Spring AI ChatClient");
     }
@@ -77,6 +87,8 @@ public class AgentService {
         try {
             activeSessions.add(sessionId);
             toolExecutionRecorder.start();
+            pendingCancellations.remove(sessionId);
+            var cancellationAdvisor = createCancellationAdvisor(sessionId);
 
             // Add user message to memory
             chatMemory.add(sessionId, new UserMessage(request.message()));
@@ -87,7 +99,8 @@ public class AgentService {
             // Call via ChatClient with tools — Spring AI handles tool execution loop
             var answer = chatClient.prompt()
                     .messages(messages)
-                    .tools(weatherTool, temperatureTool)
+                    .tools(orderDeliveranceTool, orderStatusTool, orderCancelationTool)
+                    .advisors(cancellationAdvisor)
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
                     .call()
                     .content();
@@ -98,7 +111,12 @@ public class AgentService {
 
             log.info("Agent completed task successfully with {} tool execution(s)", toolExecutions.size());
 
-            return new AgentResponse(answer, sessionId, toolExecutions, "completed");
+            return new AgentResponse(
+                    answer,
+                    sessionId,
+                    toolExecutions,
+                    "completed",
+                    cancellationAdvisor.pendingCancellation());
 
         } catch (Exception e) {
             var toolExecutions = toolExecutionRecorder.stop();
@@ -111,6 +129,98 @@ public class AgentService {
         }
     }
 
+    CancellationToolCallingAdvisor createCancellationAdvisor(String sessionId) {
+        return new CancellationToolCallingAdvisor(orderId -> prepareCancellation(orderId, sessionId));
+    }
+
+    private CancellationToolCallingAdvisor.CancellationResult prepareCancellation(String id, String sessionId) {
+        var status = orderStatusTool.getOrderStatus(id);
+        if (ORDER_NOT_FOUND.equals(status)) {
+            return new CancellationToolCallingAdvisor.CancellationResult(
+                    "I couldn't find the order " + id
+                            + ". Please verify the order number before requesting cancellation.",
+                    null);
+        }
+        if (DELIVERED.equals(status)) {
+            return new CancellationToolCallingAdvisor.CancellationResult(
+                    "The order " + id + " is already delivered and cannot be cancelled.",
+                    null);
+        }
+        if (SHIPPED.equals(status)) {
+            return new CancellationToolCallingAdvisor.CancellationResult(
+                    "The order " + id
+                            + " has already been shipped and cannot be cancelled. No cancellation has been prepared.",
+                    null);
+        }
+
+        var details = orderDeliveranceTool.getDeliveryDetails(id);
+        if (DELIVERY_DETAILS_NOT_FOUND.equals(details)) {
+            details = "No additional delivery details are available.";
+        }
+        var confirmation = new CancellationConfirmation(UUID.randomUUID().toString(), id, status, details);
+        pendingCancellations.put(sessionId, confirmation);
+        return new CancellationToolCallingAdvisor.CancellationResult(
+                "The order " + id + " is not delivered. Please verify the details below, then choose "
+                        + "\"Confirm Cancellation\" if you wish to proceed.",
+                confirmation);
+    }
+
+    public AgentResponse confirmCancellation(String sessionId, String confirmationId) {
+        var pending = pendingCancellations.get(sessionId);
+        if (pending == null
+                || !pending.confirmationId().equals(confirmationId)
+                || !pendingCancellations.remove(sessionId, pending)) {
+            return new AgentResponse(
+                    "This confirmation request has expired. Please submit your cancellation request again.",
+                    sessionId,
+                    List.of(),
+                    CONFIRMATION_EXPIRED);
+        }
+
+        toolExecutionRecorder.start();
+        try {
+            var status = orderStatusTool.getOrderStatus(pending.orderId());
+            final String answer;
+            if (ORDER_NOT_FOUND.equals(status)) {
+                answer = "I couldn't find the order " + pending.orderId() + ". No cancellation has been made.";
+            } else if (DELIVERED.equals(status)) {
+                answer = "The order " + pending.orderId()
+                        + " is now marked as delivered. No cancellation has been made.";
+            } else if (!SHIPPED.equals(status)) {
+                answer = "The status of order " + pending.orderId()
+                        + " does not allow confirming it has not been delivered. No cancellation has been made.";
+            } else {
+                var result = orderCancelationTool.cancelOrder(pending.orderId());
+                answer = "Result of canceling order " + pending.orderId() + ": " + result + ".";
+            }
+            chatMemory.add(sessionId,
+                    new UserMessage("I confirm the cancellation of order " + pending.orderId() + "."));
+            chatMemory.add(sessionId, new AssistantMessage(answer));
+            return new AgentResponse(answer, sessionId, toolExecutionRecorder.stop(), "completed");
+        } catch (RuntimeException e) {
+            toolExecutionRecorder.stop();
+            throw e;
+        }
+    }
+
+    public AgentResponse declineCancellation(String sessionId, String confirmationId) {
+        var pending = pendingCancellations.get(sessionId);
+        if (pending == null
+                || !pending.confirmationId().equals(confirmationId)
+                || !pendingCancellations.remove(sessionId, pending)) {
+            return new AgentResponse(
+                    "This confirmation request has expired. Please submit your cancellation request again.",
+                    sessionId,
+                    List.of(),
+                    CONFIRMATION_EXPIRED);
+        }
+
+        var answer = "The cancellation of order " + pending.orderId() + " has been declined.";
+        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order " + pending.orderId() + "."));
+        chatMemory.add(sessionId, new AssistantMessage(answer));
+        return new AgentResponse(answer, sessionId, List.of(), "completed");
+    }
+
     /**
      * Clear agent session.
      * Removes conversation history for the given session ID.
@@ -118,6 +228,7 @@ public class AgentService {
     public void clearSession(String sessionId) {
         chatMemory.clear(sessionId);
         activeSessions.remove(sessionId);
+        pendingCancellations.remove(sessionId);
         log.info("Cleared session: {}", sessionId);
     }
 }

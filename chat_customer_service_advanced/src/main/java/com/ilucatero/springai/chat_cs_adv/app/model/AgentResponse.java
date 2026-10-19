@@ -6,8 +6,13 @@ public record AgentResponse(
         String answer,
         String sessionId,
         List<ToolExecutionInfo> toolExecutions,
-        String status) {
+        String status,
+        CancellationConfirmation pendingCancellation) {
     public AgentResponse {
         toolExecutions = toolExecutions == null ? List.of() : List.copyOf(toolExecutions);
+    }
+
+    public AgentResponse(String answer, String sessionId, List<ToolExecutionInfo> toolExecutions, String status) {
+        this(answer, sessionId, toolExecutions, status, null);
     }
 }

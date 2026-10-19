@@ -102,7 +102,7 @@ async function sendMessage() {
       sessionId = data.sessionId;
 
       // Add agent response to chat
-      addAgentMessage(data.answer, data.toolExecutions || []);
+      addAgentMessage(data.answer, data.toolExecutions || [], data.pendingCancellation);
     } else {
       addErrorMessage(data.error || 'Failed to get response from agent');
     }
@@ -132,7 +132,7 @@ function addUserMessage(message) {
 }
 
 // Add Agent Message to Chat
-function addAgentMessage(answer, toolExecutions) {
+function addAgentMessage(answer, toolExecutions, pendingCancellation) {
   const messageDiv = document.createElement('div');
   messageDiv.className = 'chat-message agent';
 
@@ -155,7 +155,84 @@ function addAgentMessage(answer, toolExecutions) {
     `;
 
   chatContainer.appendChild(messageDiv);
+  if (pendingCancellation) {
+    addCancellationConfirmation(messageDiv, pendingCancellation);
+  }
   scrollToBottom();
+}
+
+function addCancellationConfirmation(messageDiv, pendingCancellation) {
+  const confirmation = document.createElement('div');
+  confirmation.className = 'cancellation-confirmation';
+
+  const details = document.createElement('p');
+  details.textContent = `Commande ${pendingCancellation.orderId} — statut : ${pendingCancellation.status}. `
+    + pendingCancellation.details;
+
+  const actions = document.createElement('div');
+  actions.className = 'cancellation-actions';
+
+  const acceptButton = document.createElement('button');
+  acceptButton.className = 'btn btn-danger';
+  acceptButton.textContent = "Confirmer l'annulation";
+  acceptButton.addEventListener('click', () => {
+    submitCancellationDecision(pendingCancellation, true, actions);
+  });
+
+  const declineButton = document.createElement('button');
+  declineButton.className = 'btn btn-secondary';
+  declineButton.textContent = 'Garder la commande';
+  declineButton.addEventListener('click', () => {
+    submitCancellationDecision(pendingCancellation, false, actions);
+  });
+
+  actions.append(acceptButton, declineButton);
+  confirmation.append(details, actions);
+  messageDiv.querySelector('.message-bubble').appendChild(confirmation);
+}
+
+async function submitCancellationDecision(pendingCancellation, accepted, actions) {
+  if (isProcessing) {
+    return;
+  }
+
+  isProcessing = true;
+  sendButton.disabled = true;
+  actions.querySelectorAll('button').forEach(button => {
+    button.disabled = true;
+  });
+  const decision = accepted
+    ? `Je confirme l'annulation de la commande ${pendingCancellation.orderId}.`
+    : `Je ne souhaite pas annuler la commande ${pendingCancellation.orderId}.`;
+  addUserMessage(decision);
+  const loadingId = addLoadingIndicator();
+
+  try {
+    const action = accepted ? 'confirm' : 'decline';
+    const response = await fetch(
+      `/api/conversation/session/${encodeURIComponent(sessionId)}/cancellation/${action}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmationId: pendingCancellation.confirmationId })
+      }
+    );
+    const data = await response.json();
+    removeLoadingIndicator(loadingId);
+
+    if (response.ok) {
+      addAgentMessage(data.answer, data.toolExecutions || []);
+    } else {
+      addErrorMessage(data.error || data.answer || "La confirmation de l'annulation a échoué.");
+    }
+  } catch (error) {
+    removeLoadingIndicator(loadingId);
+    addErrorMessage("Impossible d'envoyer la confirmation : " + error.message);
+  } finally {
+    isProcessing = false;
+    sendButton.disabled = false;
+    messageInput.focus();
+  }
 }
 
 // Add Error Message
