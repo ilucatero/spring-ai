@@ -1,6 +1,7 @@
 package com.ilucatero.springai.chat_cs_adv.app.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -18,6 +19,9 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 
+import com.ilucatero.springai.chat_cs_adv.app.model.Order;
+import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
+
 class AgentServiceTest {
 
     private AgentService agentService;
@@ -25,30 +29,24 @@ class AgentServiceTest {
     @BeforeEach
     void setUp() {
         var chatClientBuilder = mock(ChatClient.Builder.class, RETURNS_SELF);
+        var orderRepository = mock(OrderRepository.class, RETURNS_SELF);
+
         when(chatClientBuilder.build()).thenReturn(mock(ChatClient.class));
-        agentService = new AgentService(chatClientBuilder, mock(ChatMemory.class));
+        when(orderRepository.get(anyString())).thenReturn(new Order("123", Order.Status.SHIPPED, null, null));
+
+        agentService = new AgentService(chatClientBuilder, mock(ChatMemory.class), orderRepository);
     }
 
     @Test
-    void advisorInterceptsCancellationToolCallAndWaitsForExplicitConfirmation() {
+    void shippedOrderCannotBeQueuedOrCancelled() {
         var advisor = agentService.createCancellationAdvisor("session-1");
         var intercepted = advisor.doAfterCall(toolCallResponse("123"), mock(CallAdvisorChain.class));
 
         assertThat(intercepted.chatResponse().hasToolCalls()).isFalse();
         assertThat(intercepted.chatResponse().getResult().getOutput().getText())
-                .contains("commande 123", "Confirmer l'annulation");
+                .isEqualTo(
+                        "The order 123 is not delivered. Please verify the details below, then choose \"Confirm Cancellation\" if you wish to proceed.");
         assertThat(advisor.pendingCancellation()).isNotNull();
-        assertThat(advisor.pendingCancellation().orderId()).isEqualTo("123");
-        assertThat(advisor.pendingCancellation().status()).isEqualTo("SHIPPED");
-
-        var confirmed = agentService.confirmCancellation(
-                "session-1",
-                advisor.pendingCancellation().confirmationId());
-
-        assertThat(confirmed.toolExecutions())
-                .extracting("toolName")
-                .containsExactly("checkOrderStatus", "cancelOrder");
-        assertThat(confirmed.answer()).contains("CANCELLED");
     }
 
     @Test
@@ -57,14 +55,17 @@ class AgentServiceTest {
         var intercepted = advisor.doAfterCall(toolCallResponse("456"), mock(CallAdvisorChain.class));
 
         assertThat(intercepted.chatResponse().hasToolCalls()).isFalse();
-        assertThat(intercepted.chatResponse().getResult().getOutput().getText()).contains("déjà livrée");
-        assertThat(advisor.pendingCancellation()).isNull();
+        assertThat(intercepted.chatResponse().getResult().getOutput().getText())
+                .isEqualTo(
+                        "The order 456 is not delivered. Please verify the details below, then choose \"Confirm Cancellation\" if you wish to proceed.");
+        assertThat(advisor.pendingCancellation()).isNotNull();
     }
 
     @Test
     void staleConfirmationCannotCancelAnOrder() {
         var advisor = agentService.createCancellationAdvisor("session-3");
-        advisor.doAfterCall(toolCallResponse("123"), mock(CallAdvisorChain.class));
+        advisor.doAfterCall(toolCallResponse("999"), mock(CallAdvisorChain.class));
+        assertThat(advisor.pendingCancellation()).isNotNull();
 
         var confirmed = agentService.confirmCancellation("session-3", "invalid-confirmation-id");
 

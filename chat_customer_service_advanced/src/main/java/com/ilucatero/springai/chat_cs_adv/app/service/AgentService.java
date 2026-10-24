@@ -18,7 +18,9 @@ import org.springframework.stereotype.Service;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.CancellationConfirmation;
+import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
+import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
@@ -27,11 +29,10 @@ import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
-    private static final String ORDER_NOT_FOUND = "ORDER_NOT_FOUND";
-    private static final String DELIVERED = "DELIVERED";
-    private static final String SHIPPED = "SHIPPED";
-    private static final String DELIVERY_DETAILS_NOT_FOUND = "DELIVERY_DETAILS_NOT_FOUND";
+
     private static final String CONFIRMATION_EXPIRED = "confirmation_expired";
+    private static final List<Order.Status> CANCELLABLE_STATUS = List.of(
+            Order.Status.PROCESSING, Order.Status.READY_TO_SHIP, Order.Status.SHIPPING, Order.Status.SHIPPED);
 
     private final ChatClient chatClient;
     private final ChatMemory chatMemory;
@@ -48,16 +49,16 @@ public class AgentService {
      * Constructor with auto-wired ChatClient.Builder.
      * Tool instances are created here and passed to ChatClient at call time.
      */
-    public AgentService(ChatClient.Builder chatClientBuilder, ChatMemory chatMemory) {
+    public AgentService(ChatClient.Builder chatClientBuilder, ChatMemory chatMemory, OrderRepository orderRepository) {
         this.chatClient = chatClientBuilder
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
                 .build();
         this.chatMemory = chatMemory;
 
         this.toolExecutionRecorder = new ToolExecutionInfo.Recorder();
-        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder);
-        this.orderStatusTool = new OrderStatusTool(toolExecutionRecorder);
-        this.orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder);
+        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository);
+        this.orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
+        this.orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
 
         log.info("Agent service initialized with Spring AI ChatClient");
     }
@@ -135,33 +136,28 @@ public class AgentService {
 
     private CancellationToolCallingAdvisor.CancellationResult prepareCancellation(String id, String sessionId) {
         var status = orderStatusTool.getOrderStatus(id);
-        if (ORDER_NOT_FOUND.equals(status)) {
-            return new CancellationToolCallingAdvisor.CancellationResult(
-                    "I couldn't find the order " + id
-                            + ". Please verify the order number before requesting cancellation.",
-                    null);
-        }
-        if (DELIVERED.equals(status)) {
-            return new CancellationToolCallingAdvisor.CancellationResult(
-                    "The order " + id + " is already delivered and cannot be cancelled.",
-                    null);
-        }
-        if (SHIPPED.equals(status)) {
-            return new CancellationToolCallingAdvisor.CancellationResult(
-                    "The order " + id
-                            + " has already been shipped and cannot be cancelled. No cancellation has been prepared.",
-                    null);
+        if (!CANCELLABLE_STATUS.contains(status)) {
+            return switch (status) {
+                case ORDER_NOT_FOUND -> new CancellationToolCallingAdvisor.CancellationResult(
+                        "I couldn't find the order %s. Please verify the order number before requesting cancellation."
+                                .formatted(id),
+                        null);
+                default -> new CancellationToolCallingAdvisor.CancellationResult(
+                        "The order %s with status %s cannot be cancelled. No cancellation has been prepared."
+                                .formatted(id, status),
+                        null);
+            };
         }
 
         var details = orderDeliveranceTool.getDeliveryDetails(id);
-        if (DELIVERY_DETAILS_NOT_FOUND.equals(details)) {
+        if (details == null) {
             details = "No additional delivery details are available.";
         }
-        var confirmation = new CancellationConfirmation(UUID.randomUUID().toString(), id, status, details);
+        var confirmation = new CancellationConfirmation(UUID.randomUUID().toString(), id, status.name(), details);
         pendingCancellations.put(sessionId, confirmation);
         return new CancellationToolCallingAdvisor.CancellationResult(
-                "The order " + id + " is not delivered. Please verify the details below, then choose "
-                        + "\"Confirm Cancellation\" if you wish to proceed.",
+                "The order %s is not delivered. Please verify the details below, then choose \"Confirm Cancellation\" if you wish to proceed."
+                        .formatted(id),
                 confirmation);
     }
 
@@ -181,20 +177,20 @@ public class AgentService {
         try {
             var status = orderStatusTool.getOrderStatus(pending.orderId());
             final String answer;
-            if (ORDER_NOT_FOUND.equals(status)) {
-                answer = "I couldn't find the order " + pending.orderId() + ". No cancellation has been made.";
-            } else if (DELIVERED.equals(status)) {
-                answer = "The order " + pending.orderId()
-                        + " is now marked as delivered. No cancellation has been made.";
-            } else if (!SHIPPED.equals(status)) {
-                answer = "The status of order " + pending.orderId()
-                        + " does not allow confirming it has not been delivered. No cancellation has been made.";
-            } else {
+            if (CANCELLABLE_STATUS.contains(status)) {
                 var result = orderCancelationTool.cancelOrder(pending.orderId());
-                answer = "Result of canceling order " + pending.orderId() + ": " + result + ".";
+                answer = "Result of canceling order %s:%s.".formatted(pending.orderId(), result);
+            } else {
+                if (Order.Status.ORDER_NOT_FOUND.equals(status)) {
+                    answer = "I couldn't find the order %s. No cancellation has been made."
+                            .formatted(pending.orderId());
+                } else {
+                    answer = "The order %s is now marked with status %s. No cancellation can been made."
+                            .formatted(pending.orderId(), status);
+                }
             }
             chatMemory.add(sessionId,
-                    new UserMessage("I confirm the cancellation of order " + pending.orderId() + "."));
+                    new UserMessage("I confirm the cancellation of order %s.".formatted(pending.orderId())));
             chatMemory.add(sessionId, new AssistantMessage(answer));
             return new AgentResponse(answer, sessionId, toolExecutionRecorder.stop(), "completed");
         } catch (RuntimeException e) {
@@ -215,8 +211,8 @@ public class AgentService {
                     CONFIRMATION_EXPIRED);
         }
 
-        var answer = "The cancellation of order " + pending.orderId() + " has been declined.";
-        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order " + pending.orderId() + "."));
+        var answer = "The cancellation of order %s has been declined.".formatted(pending.orderId());
+        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order %s.".formatted(pending.orderId())));
         chatMemory.add(sessionId, new AssistantMessage(answer));
         return new AgentResponse(answer, sessionId, List.of(), "completed");
     }

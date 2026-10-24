@@ -40,9 +40,9 @@ public record ToolExecutionInfo(
             return executions == null ? List.of() : List.copyOf(executions);
         }
 
-        public String record(String toolName, List<String> arguments, Supplier<String> invocation) {
+        public <T> T record(String toolName, List<String> arguments, Supplier<T> invocation) {
             try {
-                String result = invocation.get();
+                T result = invocation.get();
                 add(toolName, arguments, COMPLETED);
                 return result;
             } catch (RuntimeException e) {
