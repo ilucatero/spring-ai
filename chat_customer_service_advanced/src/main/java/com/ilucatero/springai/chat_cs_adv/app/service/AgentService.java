@@ -30,13 +30,13 @@ public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
 
-    private static final String CONFIRMATION_EXPIRED = "confirmation_expired";
     private static final List<Order.Status> CANCELLABLE_STATUS = List.of(
             Order.Status.PROCESSING, Order.Status.READY_TO_SHIP, Order.Status.SHIPPING, Order.Status.SHIPPED);
 
     private final ChatClient chatClient;
     private final ChatMemory chatMemory;
 
+    // recorder must be renewed on each session call, no previous state reuse
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
     private final OrderDeliveranceTool orderDeliveranceTool;
     private final OrderStatusTool orderStatusTool;
@@ -116,7 +116,7 @@ public class AgentService {
                     answer,
                     sessionId,
                     toolExecutions,
-                    "completed",
+                    AgentResponse.Status.COMPLETED,
                     cancellationAdvisor.pendingCancellation());
 
         } catch (Exception e) {
@@ -126,7 +126,7 @@ public class AgentService {
                     "I encountered an error: " + e.getMessage(),
                     sessionId,
                     toolExecutions,
-                    "failed");
+                    AgentResponse.Status.FAILED);
         }
     }
 
@@ -170,7 +170,7 @@ public class AgentService {
                     "This confirmation request has expired. Please submit your cancellation request again.",
                     sessionId,
                     List.of(),
-                    CONFIRMATION_EXPIRED);
+                    AgentResponse.Status.CONFIRMATION_EXPIRED);
         }
 
         toolExecutionRecorder.start();
@@ -179,7 +179,7 @@ public class AgentService {
             final String answer;
             if (CANCELLABLE_STATUS.contains(status)) {
                 var result = orderCancelationTool.cancelOrder(pending.orderId());
-                answer = "Result of canceling order %s:%s.".formatted(pending.orderId(), result);
+                answer = "Result of canceling order %s: %s.".formatted(pending.orderId(), result);
             } else {
                 if (Order.Status.ORDER_NOT_FOUND.equals(status)) {
                     answer = "I couldn't find the order %s. No cancellation has been made."
@@ -192,7 +192,7 @@ public class AgentService {
             chatMemory.add(sessionId,
                     new UserMessage("I confirm the cancellation of order %s.".formatted(pending.orderId())));
             chatMemory.add(sessionId, new AssistantMessage(answer));
-            return new AgentResponse(answer, sessionId, toolExecutionRecorder.stop(), "completed");
+            return new AgentResponse(answer, sessionId, toolExecutionRecorder.stop(), AgentResponse.Status.COMPLETED);
         } catch (RuntimeException e) {
             toolExecutionRecorder.stop();
             throw e;
@@ -208,13 +208,13 @@ public class AgentService {
                     "This confirmation request has expired. Please submit your cancellation request again.",
                     sessionId,
                     List.of(),
-                    CONFIRMATION_EXPIRED);
+                    AgentResponse.Status.CONFIRMATION_EXPIRED);
         }
 
         var answer = "The cancellation of order %s has been declined.".formatted(pending.orderId());
         chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order %s.".formatted(pending.orderId())));
         chatMemory.add(sessionId, new AssistantMessage(answer));
-        return new AgentResponse(answer, sessionId, List.of(), "completed");
+        return new AgentResponse(answer, sessionId, List.of(), AgentResponse.Status.COMPLETED);
     }
 
     /**
