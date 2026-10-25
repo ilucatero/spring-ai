@@ -78,7 +78,7 @@ public class AgentController {
         }
 
         try {
-            var agentRequest = new AgentRequest(message, sessionId, true);
+            var agentRequest = new AgentRequest(message, sessionId);
             var response = agentService.executeTask(agentRequest);
 
             return ResponseEntity.ok(responseBody(response));

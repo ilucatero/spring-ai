@@ -12,21 +12,21 @@ import java.util.List;
 
 public class OrderCancelationTool {
 
+    public static final String TOOL_NAME_CANCEL_ORDER = "cancelOrder";
+
     private static final Logger log = LoggerFactory.getLogger(OrderCancelationTool.class);
 
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
     private final OrderRepository orderRepository;
-
-    public static final String CANCEL_ORDER_TOOL = "cancelOrder";
 
     public OrderCancelationTool(ToolExecutionInfo.Recorder toolExecutionRecorder, OrderRepository orderRepository) {
         this.toolExecutionRecorder = toolExecutionRecorder;
         this.orderRepository = orderRepository;
     }
 
-    @Tool(name = CANCEL_ORDER_TOOL, description = "Request cancellation of an order by ID. The application verifies its status and requires explicit user confirmation before it is cancelled.")
+    @Tool(name = TOOL_NAME_CANCEL_ORDER, description = "Request cancellation of an order by ID. The application verifies its status and requires explicit user confirmation before it is cancelled.")
     public String cancelOrder(@ToolParam(description = "Order identifier") String orderId) {
-        return toolExecutionRecorder.record("cancelOrder",
+        return toolExecutionRecorder.record(TOOL_NAME_CANCEL_ORDER,
                 List.of("orderId=" + orderId),
                 () -> {
                     log.info("EXECUTED : Cancelling order for ID: {}", orderId);

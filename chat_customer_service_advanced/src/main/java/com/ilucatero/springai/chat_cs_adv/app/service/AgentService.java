@@ -134,22 +134,23 @@ public class AgentService {
     public AgentResponse executeTask(AgentRequest request) {
         log.info("Executing agent task: {}", request.message());
 
+        // log toolManager config
+        inspectToolCallingManager(toolCallingManager);
+
         final var sessionId = request.sessionId() == null ? createAgentSession() : request.sessionId();
 
-        try {
-            activeSessions.add(sessionId);
-            toolExecutionRecorder.start();
-            pendingOrderUserActions.remove(sessionId);
-            var cancellationAdvisor = createCancellingToolCallingAdvisor(sessionId);
+        activeSessions.add(sessionId);
+        pendingOrderUserActions.remove(sessionId);
 
+        toolExecutionRecorder.start();
+        var cancellationAdvisor = createCancellingToolCallingAdvisor(sessionId);
+
+        try {
             // Add user message to memory
             chatMemory.add(sessionId, new UserMessage(request.message()));
 
             // Get conversation history from ChatMemory
             var messages = chatMemory.get(sessionId);
-
-            // check toolManager config
-            inspectToolCallingManager(toolCallingManager);
 
             // Call via ChatClient with tools — Spring AI handles tool execution loop
             var answer = chatClient
@@ -188,7 +189,7 @@ public class AgentService {
 
     CustomToolCallingAdvisor createCancellingToolCallingAdvisor(String sessionId) {
         return new CustomToolCallingAdvisor(this.toolCallingManager,
-                toolCall -> OrderCancelationTool.CANCEL_ORDER_TOOL.equals(toolCall.name()),
+                toolCall -> OrderCancelationTool.TOOL_NAME_CANCEL_ORDER.equals(toolCall.name()),
                 toolArguments -> prepareCancellation(toolArguments, sessionId));
     }
 

@@ -12,6 +12,9 @@ import java.util.List;
 
 public class OrderDeliveranceTool {
 
+    public static final String TOOL_NAME_GET_DELIVERY_DATE = "getDeliveryDate";
+    public static final String TOOL_NAME_GET_DELIVERY_DETAILS = "getDeliveryDetails";
+
     private static final Logger log = LoggerFactory.getLogger(OrderDeliveranceTool.class);
 
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
@@ -22,9 +25,9 @@ public class OrderDeliveranceTool {
         this.orderRepository = orderRepository;
     }
 
-    @Tool(description = "Get the programmed or delivered date, dependeing on its status, for an order by its ID")
+    @Tool(name = TOOL_NAME_GET_DELIVERY_DATE, description = "Get the programmed or delivered date, dependeing on its status, for an order by its ID")
     public String getDeliveryDate(@ToolParam(description = "Order identifier") String orderId) {
-        return toolExecutionRecorder.record("getDeliveryDate",
+        return toolExecutionRecorder.record(TOOL_NAME_GET_DELIVERY_DATE,
                 List.of("orderId=" + orderId),
                 () -> {
                     log.info("EXECUTED : Getting delivery date for order ID: {}", orderId);
@@ -32,9 +35,9 @@ public class OrderDeliveranceTool {
                 });
     }
 
-    @Tool(description = "Get the shipping details of delivery for an order by its ID")
+    @Tool(name = TOOL_NAME_GET_DELIVERY_DETAILS, description = "Get the shipping details of delivery for an order by its ID")
     public String getDeliveryDetails(@ToolParam(description = "Order identifier") String orderId) {
-        return toolExecutionRecorder.record("getDeliveryDetails",
+        return toolExecutionRecorder.record(TOOL_NAME_GET_DELIVERY_DETAILS,
                 List.of("orderId=" + orderId),
                 () -> {
                     log.info("EXECUTED : Getting delivery details for order ID: {}", orderId);

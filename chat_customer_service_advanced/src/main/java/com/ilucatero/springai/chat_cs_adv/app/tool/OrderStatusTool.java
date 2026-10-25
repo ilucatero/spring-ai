@@ -13,6 +13,8 @@ import java.util.List;
 
 public class OrderStatusTool {
 
+    public final static String TOOL_NAME_GET_ORDER = "checkOrderStatus";
+
     private static final Logger log = LoggerFactory.getLogger(OrderStatusTool.class);
 
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
@@ -23,9 +25,9 @@ public class OrderStatusTool {
         this.orderRepository = orderRepository;
     }
 
-    @Tool(description = "Get the status of an order by its ID")
+    @Tool(name = TOOL_NAME_GET_ORDER, description = "Get the status of an order by its ID")
     public Order.Status getOrderStatus(@ToolParam(description = "Order identifier") String orderId) {
-        return toolExecutionRecorder.record("checkOrderStatus",
+        return toolExecutionRecorder.record(TOOL_NAME_GET_ORDER,
                 List.of("orderId=" + orderId),
                 () -> {
                     log.info("EXECUTED : Checking order status for ID: {}", orderId);
