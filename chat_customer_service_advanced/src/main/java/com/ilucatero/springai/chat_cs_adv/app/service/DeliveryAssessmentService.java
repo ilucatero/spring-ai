@@ -20,8 +20,6 @@ public class DeliveryAssessmentService {
         UNKNOWN
     }
 
-    private static final Logger log = LoggerFactory.getLogger(DeliveryAssessmentService.class);
-
     private final DateFormatter dateFormatter = new DateFormatter("yyyy-MM-dd");
 
     private final Clock clock;
