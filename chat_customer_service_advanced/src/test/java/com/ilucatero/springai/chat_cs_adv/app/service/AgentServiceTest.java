@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClient.CallResponseSpec;
 import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
@@ -44,7 +45,8 @@ class AgentServiceTest {
         when(chatClientRequest.messages(anyList())).thenReturn(chatClientRequest);
         when(chatClientRequest.tools(any(Object[].class))).thenReturn(chatClientRequest);
         when(chatClientRequest.advisors(any(Advisor.class))).thenReturn(chatClientRequest);
-        when(chatClientRequest.advisors(any(Consumer.class))).thenReturn(chatClientRequest);
+        when(chatClientRequest.advisors(ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any()))
+                .thenReturn(chatClientRequest);
 
         responseSpec = mock(CallResponseSpec.class);
         when(chatClientRequest.call()).thenReturn(responseSpec);
