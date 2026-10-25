@@ -16,7 +16,7 @@ public class SpringAiConfig {
      * Loses all data on application restart
      */
     @Bean
-    public ChatMemoryRepository chatMemoryRepository() {
+    ChatMemoryRepository chatMemoryRepository() {
         return new InMemoryChatMemoryRepository();
     }
 
@@ -27,7 +27,7 @@ public class SpringAiConfig {
      * token limits.
      */
     @Bean
-    public ChatMemory chatMemory(ChatMemoryRepository chatMemoryRepository) {
+    ChatMemory chatMemory(ChatMemoryRepository chatMemoryRepository) {
         return MessageWindowChatMemory.builder()
                 .chatMemoryRepository(chatMemoryRepository)
                 .maxMessages(10)

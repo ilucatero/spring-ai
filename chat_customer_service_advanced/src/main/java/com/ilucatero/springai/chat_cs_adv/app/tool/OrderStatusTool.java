@@ -5,32 +5,33 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
+import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
+import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 
 import java.util.List;
 
 public class OrderStatusTool {
 
+    public final static String TOOL_NAME_GET_ORDER = "checkOrderStatus";
+
     private static final Logger log = LoggerFactory.getLogger(OrderStatusTool.class);
 
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
+    private final OrderRepository orderRepository;
 
-    public OrderStatusTool(ToolExecutionInfo.Recorder toolExecutionRecorder) {
+    public OrderStatusTool(ToolExecutionInfo.Recorder toolExecutionRecorder, OrderRepository orderRepository) {
         this.toolExecutionRecorder = toolExecutionRecorder;
+        this.orderRepository = orderRepository;
     }
 
-    @Tool(description = "Get the status of an order by its ID")
-    public String getOrderStatus(@ToolParam(description = "Order identifier") String orderId) {
-        return toolExecutionRecorder.record("checkOrderStatus",
+    @Tool(name = TOOL_NAME_GET_ORDER, description = "Get the status of an order by its ID")
+    public Order.Status getOrderStatus(@ToolParam(description = "Order identifier") String orderId) {
+        return toolExecutionRecorder.record(TOOL_NAME_GET_ORDER,
                 List.of("orderId=" + orderId),
                 () -> {
-                    log.info("Checking order status for ID: {}", orderId);
-                    return switch (orderId) {
-                        case "123" -> "SHIPPED";
-                        case "456" -> "DELIVERED";
-                        case "999" -> "READY_FOR_PICKUP";
-                        default -> "ORDER_NOT_FOUND";
-                    };
+                    log.info("EXECUTED : Checking order status for ID: {}", orderId);
+                    return orderRepository.get(orderId).status;
                 });
     }
 

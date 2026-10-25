@@ -7,7 +7,12 @@ import java.util.function.Supplier;
 public record ToolExecutionInfo(
         String toolName,
         List<String> arguments,
-        String status) {
+        Status status) {
+
+    public enum Status {
+        COMPLETED, FAILED
+    }
+
     public ToolExecutionInfo {
         arguments = arguments == null ? List.of() : List.copyOf(arguments);
     }
@@ -17,16 +22,13 @@ public record ToolExecutionInfo(
      * metadata.
      */
     public ToolExecutionInfo(String toolName, String arguments, String result, long executionTimeMs) {
-        this(toolName, List.of(arguments), "completed");
+        this(toolName, List.of(arguments), Status.COMPLETED);
     }
 
     /**
      * Records tool executions for the current agent request.
      */
     public static class Recorder {
-
-        private static final String COMPLETED = "completed";
-        private static final String FAILED = "failed";
 
         private final ThreadLocal<List<ToolExecutionInfo>> currentExecutions = new ThreadLocal<>();
 
@@ -40,18 +42,18 @@ public record ToolExecutionInfo(
             return executions == null ? List.of() : List.copyOf(executions);
         }
 
-        public String record(String toolName, List<String> arguments, Supplier<String> invocation) {
+        public <T> T record(String toolName, List<String> arguments, Supplier<T> invocation) {
             try {
-                String result = invocation.get();
-                add(toolName, arguments, COMPLETED);
+                T result = invocation.get();
+                add(toolName, arguments, Status.COMPLETED);
                 return result;
             } catch (RuntimeException e) {
-                add(toolName, arguments, FAILED);
+                add(toolName, arguments, Status.FAILED);
                 throw e;
             }
         }
 
-        private void add(String toolName, List<String> arguments, String status) {
+        private void add(String toolName, List<String> arguments, Status status) {
             List<ToolExecutionInfo> executions = currentExecutions.get();
             if (executions != null) {
                 executions.add(new ToolExecutionInfo(toolName, arguments, status));

@@ -6,6 +6,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.ai.model.tool.DefaultToolCallingManager;
+import org.springframework.ai.model.tool.ToolCallingManager;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -15,49 +18,100 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
-import com.ilucatero.springai.chat_cs_adv.app.model.CancellationConfirmation;
+import com.ilucatero.springai.chat_cs_adv.app.model.OrderUserActionConfirmation;
+import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
+import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor;
+import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor.OrderUserActionResult;
 
 @Service
 public class AgentService {
 
+    private static final String PROMT_SYSTEM = """
+            You are a customer support agent.
+
+            Objective: Answer questions about orders.
+
+            GENERAL RULES:
+             - Use tools to retrieve real information.
+             - Never assume the status of an order.
+             - If a result is insufficient, decide whether another tool can provide useful information.
+             - If the order cannot be found, explain it to the customer.
+             - Finish when you have the necessary information.
+             - Limit data retrieval to 3 distinct orders maximum per request.
+             - Never cancel an order without specific user approval.
+
+            DECISION STRATEGY:
+             - First, retrieve the order status when the user asks about an order.
+             - If the user asks whether they should worry about an order, inspect the delivery details when they provide useful additional information.
+             - Do not call a tool if its result is not needed to answer the user's question.
+             - Do not repeat a tool call when its result is already available and still valid.
+             - If the available information is sufficient, answer without calling additional tools.
+             - If the tool-call limit prevents you from obtaining all necessary information, explain what you could verify and what remains unknown.
+             - Never conclude that an order is delayed unless the retrieved information supports that conclusion.
+
+            IMPORTANT — TOOL ERROR HANDLING:
+             - When a tool execution fails with a technical error, do not interpret the error as ORDER_NOT_FOUND.
+             - Do not claim that the order does not exist.
+             - Explain that the order information could not be retrieved due to a technical problem.
+             - Never invent the result of a failed tool call.
+             - Compare the scheduled delivery date with the current date before assessing whether a customer should worry.
+             - If the scheduled delivery date is in the past, do not reassure the customer that everything is on schedule.
+             - Explain that the delivery date has passed and recommend checking the latest delivery status.
+             - If the current date is unavailable, do not make claims about whether the delivery is on time.
+            """;
+
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
-    private static final String ORDER_NOT_FOUND = "ORDER_NOT_FOUND";
-    private static final String DELIVERED = "DELIVERED";
-    private static final String SHIPPED = "SHIPPED";
-    private static final String DELIVERY_DETAILS_NOT_FOUND = "DELIVERY_DETAILS_NOT_FOUND";
-    private static final String CONFIRMATION_EXPIRED = "confirmation_expired";
+
+    private static final List<Order.Status> CANCELLABLE_STATUS = List.of(
+            Order.Status.PROCESSING, Order.Status.READY_TO_SHIP, Order.Status.SHIPPING, Order.Status.SHIPPED);
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ChatClient chatClient;
     private final ChatMemory chatMemory;
+    private final ToolCallingManager toolCallingManager;
+    private final OrderRepository orderRepository;
 
+    // recorder must be renewed on each session call, no previous state reuse
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
     private final OrderDeliveranceTool orderDeliveranceTool;
     private final OrderStatusTool orderStatusTool;
     private final OrderCancelationTool orderCancelationTool;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
-    private final Map<String, CancellationConfirmation> pendingCancellations = new ConcurrentHashMap<>();
+    private final Map<String, OrderUserActionConfirmation> pendingOrderUserActions = new ConcurrentHashMap<>();
 
     /**
      * Constructor with auto-wired ChatClient.Builder.
      * Tool instances are created here and passed to ChatClient at call time.
+     *
+     * IMPORTANT : never build a ToolCallingManager inline, otherwise the
+     * parametered limits wont be used
      */
-    public AgentService(ChatClient.Builder chatClientBuilder, ChatMemory chatMemory) {
+    public AgentService(ToolCallingManager toolCallingManager, ChatClient.Builder chatClientBuilder,
+            ChatMemory chatMemory, OrderRepository orderRepository,
+            DeliveryAssessmentService deliveryAssessmentService) {
+
+        this.toolCallingManager = toolCallingManager;
         this.chatClient = chatClientBuilder
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
                 .build();
         this.chatMemory = chatMemory;
+        this.orderRepository = orderRepository;
 
         this.toolExecutionRecorder = new ToolExecutionInfo.Recorder();
-        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder);
-        this.orderStatusTool = new OrderStatusTool(toolExecutionRecorder);
-        this.orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder);
+        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
+                deliveryAssessmentService);
+        this.orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
+        this.orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
 
         log.info("Agent service initialized with Spring AI ChatClient");
     }
@@ -82,14 +136,18 @@ public class AgentService {
     public AgentResponse executeTask(AgentRequest request) {
         log.info("Executing agent task: {}", request.message());
 
+        // log toolManager config
+        inspectToolCallingManager(toolCallingManager);
+
         final var sessionId = request.sessionId() == null ? createAgentSession() : request.sessionId();
 
-        try {
-            activeSessions.add(sessionId);
-            toolExecutionRecorder.start();
-            pendingCancellations.remove(sessionId);
-            var cancellationAdvisor = createCancellationAdvisor(sessionId);
+        activeSessions.add(sessionId);
+        pendingOrderUserActions.remove(sessionId);
 
+        toolExecutionRecorder.start();
+        var cancellationAdvisor = createCancellingToolCallingAdvisor(sessionId);
+
+        try {
             // Add user message to memory
             chatMemory.add(sessionId, new UserMessage(request.message()));
 
@@ -97,7 +155,9 @@ public class AgentService {
             var messages = chatMemory.get(sessionId);
 
             // Call via ChatClient with tools — Spring AI handles tool execution loop
-            var answer = chatClient.prompt()
+            var answer = chatClient
+                    .prompt()
+                    .system(PROMT_SYSTEM)
                     .messages(messages)
                     .tools(orderDeliveranceTool, orderStatusTool, orderCancelationTool)
                     .advisors(cancellationAdvisor)
@@ -115,8 +175,8 @@ public class AgentService {
                     answer,
                     sessionId,
                     toolExecutions,
-                    "completed",
-                    cancellationAdvisor.pendingCancellation());
+                    AgentResponse.Status.COMPLETED,
+                    cancellationAdvisor.pendingOrderUserAction());
 
         } catch (Exception e) {
             var toolExecutions = toolExecutionRecorder.stop();
@@ -125,78 +185,104 @@ public class AgentService {
                     "I encountered an error: " + e.getMessage(),
                     sessionId,
                     toolExecutions,
-                    "failed");
+                    AgentResponse.Status.FAILED);
         }
     }
 
-    CancellationToolCallingAdvisor createCancellationAdvisor(String sessionId) {
-        return new CancellationToolCallingAdvisor(orderId -> prepareCancellation(orderId, sessionId));
+    CustomToolCallingAdvisor createCancellingToolCallingAdvisor(String sessionId) {
+        return new CustomToolCallingAdvisor(this.toolCallingManager,
+                toolCall -> OrderCancelationTool.TOOL_NAME_CANCEL_ORDER.equals(toolCall.name()),
+                toolArguments -> prepareCancellation(toolArguments, sessionId));
     }
 
-    private CancellationToolCallingAdvisor.CancellationResult prepareCancellation(String id, String sessionId) {
-        var status = orderStatusTool.getOrderStatus(id);
-        if (ORDER_NOT_FOUND.equals(status)) {
-            return new CancellationToolCallingAdvisor.CancellationResult(
-                    "I couldn't find the order " + id
-                            + ". Please verify the order number before requesting cancellation.",
-                    null);
-        }
-        if (DELIVERED.equals(status)) {
-            return new CancellationToolCallingAdvisor.CancellationResult(
-                    "The order " + id + " is already delivered and cannot be cancelled.",
-                    null);
-        }
-        if (SHIPPED.equals(status)) {
-            return new CancellationToolCallingAdvisor.CancellationResult(
-                    "The order " + id
-                            + " has already been shipped and cannot be cancelled. No cancellation has been prepared.",
+    private CustomToolCallingAdvisor.OrderUserActionResult prepareCancellation(String toolArguments, String sessionId) {
+        var orderId = (String) null;
+
+        // parse tool arguments to extrat Order Id
+        try {
+            var orderIdNode = objectMapper.readTree(toolArguments).get("orderId");
+            if (orderIdNode == null || !orderIdNode.isTextual() || orderIdNode.asText().isBlank()) {
+                return new OrderUserActionResult(
+                        "To verify if the cancellation is possible, please provide the order number.",
+                        null);
+            }
+            orderId = orderIdNode.textValue();
+
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.warn("Ignoring malformed cancelOrder tool arguments");
+            return new OrderUserActionResult(
+                    "I couldn't identify the order number. Please specify it.",
                     null);
         }
 
-        var details = orderDeliveranceTool.getDeliveryDetails(id);
-        if (DELIVERY_DETAILS_NOT_FOUND.equals(details)) {
+        // get Order from DB
+        var order = orderRepository.get(orderId);
+
+        // extract status
+        var status = order.status;
+        if (!CANCELLABLE_STATUS.contains(status)) {
+            return switch (status) {
+                case ORDER_NOT_FOUND -> new CustomToolCallingAdvisor.OrderUserActionResult(
+                        "I couldn't find the order %s. Please verify the order number before requesting cancellation."
+                                .formatted(orderId),
+                        null);
+                default -> new CustomToolCallingAdvisor.OrderUserActionResult(
+                        "The order %s with status %s cannot be cancelled. No cancellation has been prepared."
+                                .formatted(orderId, status),
+                        null);
+            };
+        }
+
+        // extract details
+        var details = order.deliveryDetails;
+        if (details == null) {
             details = "No additional delivery details are available.";
         }
-        var confirmation = new CancellationConfirmation(UUID.randomUUID().toString(), id, status, details);
-        pendingCancellations.put(sessionId, confirmation);
-        return new CancellationToolCallingAdvisor.CancellationResult(
-                "The order " + id + " is not delivered. Please verify the details below, then choose "
-                        + "\"Confirm Cancellation\" if you wish to proceed.",
+
+        // create confirmation user action
+        var confirmation = new OrderUserActionConfirmation(UUID.randomUUID().toString(), orderId, status.name(),
+                details);
+        pendingOrderUserActions.put(sessionId, confirmation);
+
+        // returns user action result
+        return new CustomToolCallingAdvisor.OrderUserActionResult(
+                "The order %s is not delivered. Please verify the details below, then choose \"Confirm Cancellation\" if you wish to proceed."
+                        .formatted(orderId),
                 confirmation);
     }
 
     public AgentResponse confirmCancellation(String sessionId, String confirmationId) {
-        var pending = pendingCancellations.get(sessionId);
+        var pending = pendingOrderUserActions.get(sessionId);
         if (pending == null
                 || !pending.confirmationId().equals(confirmationId)
-                || !pendingCancellations.remove(sessionId, pending)) {
+                || !pendingOrderUserActions.remove(sessionId, pending)) {
             return new AgentResponse(
                     "This confirmation request has expired. Please submit your cancellation request again.",
                     sessionId,
                     List.of(),
-                    CONFIRMATION_EXPIRED);
+                    AgentResponse.Status.CONFIRMATION_EXPIRED);
         }
 
         toolExecutionRecorder.start();
         try {
             var status = orderStatusTool.getOrderStatus(pending.orderId());
             final String answer;
-            if (ORDER_NOT_FOUND.equals(status)) {
-                answer = "I couldn't find the order " + pending.orderId() + ". No cancellation has been made.";
-            } else if (DELIVERED.equals(status)) {
-                answer = "The order " + pending.orderId()
-                        + " is now marked as delivered. No cancellation has been made.";
-            } else if (!SHIPPED.equals(status)) {
-                answer = "The status of order " + pending.orderId()
-                        + " does not allow confirming it has not been delivered. No cancellation has been made.";
-            } else {
+            if (CANCELLABLE_STATUS.contains(status)) {
                 var result = orderCancelationTool.cancelOrder(pending.orderId());
-                answer = "Result of canceling order " + pending.orderId() + ": " + result + ".";
+                answer = "Result of canceling order %s: %s.".formatted(pending.orderId(), result);
+            } else {
+                if (Order.Status.ORDER_NOT_FOUND.equals(status)) {
+                    answer = "I couldn't find the order %s. No cancellation has been made."
+                            .formatted(pending.orderId());
+                } else {
+                    answer = "The order %s is now marked with status %s. No cancellation can been made."
+                            .formatted(pending.orderId(), status);
+                }
             }
             chatMemory.add(sessionId,
-                    new UserMessage("I confirm the cancellation of order " + pending.orderId() + "."));
+                    new UserMessage("I confirm the cancellation of order %s.".formatted(pending.orderId())));
             chatMemory.add(sessionId, new AssistantMessage(answer));
-            return new AgentResponse(answer, sessionId, toolExecutionRecorder.stop(), "completed");
+            return new AgentResponse(answer, sessionId, toolExecutionRecorder.stop(), AgentResponse.Status.COMPLETED);
         } catch (RuntimeException e) {
             toolExecutionRecorder.stop();
             throw e;
@@ -204,21 +290,21 @@ public class AgentService {
     }
 
     public AgentResponse declineCancellation(String sessionId, String confirmationId) {
-        var pending = pendingCancellations.get(sessionId);
+        var pending = pendingOrderUserActions.get(sessionId);
         if (pending == null
                 || !pending.confirmationId().equals(confirmationId)
-                || !pendingCancellations.remove(sessionId, pending)) {
+                || !pendingOrderUserActions.remove(sessionId, pending)) {
             return new AgentResponse(
                     "This confirmation request has expired. Please submit your cancellation request again.",
                     sessionId,
                     List.of(),
-                    CONFIRMATION_EXPIRED);
+                    AgentResponse.Status.CONFIRMATION_EXPIRED);
         }
 
-        var answer = "The cancellation of order " + pending.orderId() + " has been declined.";
-        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order " + pending.orderId() + "."));
+        var answer = "The cancellation of order %s has been declined.".formatted(pending.orderId());
+        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order %s.".formatted(pending.orderId())));
         chatMemory.add(sessionId, new AssistantMessage(answer));
-        return new AgentResponse(answer, sessionId, List.of(), "completed");
+        return new AgentResponse(answer, sessionId, List.of(), AgentResponse.Status.COMPLETED);
     }
 
     /**
@@ -228,7 +314,47 @@ public class AgentService {
     public void clearSession(String sessionId) {
         chatMemory.clear(sessionId);
         activeSessions.remove(sessionId);
-        pendingCancellations.remove(sessionId);
+        pendingOrderUserActions.remove(sessionId);
         log.info("Cleared session: {}", sessionId);
+    }
+
+    /** Logs ToolCallinManager configuration */
+    public static void inspectToolCallingManager(ToolCallingManager manager) {
+
+        if (!(manager instanceof DefaultToolCallingManager)) {
+            log.info("""
+                    === ToolCallingManager ===
+                            Class: {}"
+                            Gestionnaire non standard : inspection spécifique nécessaire.
+                    ==========================
+                    """,
+                    manager.getClass().getName());
+            return;
+        }
+
+        try {
+            var limitsField = DefaultToolCallingManager.class.getDeclaredField("toolCallLimits");
+            limitsField.setAccessible(true);
+            var limits = limitsField.get(manager);
+
+            var fieldLimits = new StringBuilder();
+            for (var field : limits.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                fieldLimits.append("\n\t" + field.getName() + " = " + field.get(limits));
+            }
+
+            log.info("""
+                    === ToolCallingManager ===
+                        Class: {}
+                        ToolCallLimits class: {}
+                        ---- ToolCallLimits Field Limits --- {}
+                    ==========================
+                    """,
+                    manager.getClass().getName(),
+                    limits.getClass().getName(),
+                    fieldLimits);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Impossible d'inspecter les limites", e);
+        }
     }
 }

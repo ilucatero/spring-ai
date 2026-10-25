@@ -1,84 +1,87 @@
 package com.ilucatero.springai.chat_cs_adv.app.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
-import java.util.Map;
+import java.util.function.Consumer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.ChatClientResponse;
-import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
+import org.springframework.ai.chat.client.ChatClient.CallResponseSpec;
+import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.model.tool.ToolCallingManager;
+
+import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
+import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
+import com.ilucatero.springai.chat_cs_adv.app.model.Order;
+import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 
 class AgentServiceTest {
 
     private AgentService agentService;
 
+    private ChatClientRequestSpec chatClientRequest;
+    private CallResponseSpec responseSpec;
+
     @BeforeEach
     void setUp() {
         var chatClientBuilder = mock(ChatClient.Builder.class, RETURNS_SELF);
-        when(chatClientBuilder.build()).thenReturn(mock(ChatClient.class));
-        agentService = new AgentService(chatClientBuilder, mock(ChatMemory.class));
+        var orderRepository = mock(OrderRepository.class, RETURNS_SELF);
+        var toolCallingManager = mock(ToolCallingManager.class, RETURNS_SELF);
+
+        var chatClient = mock(ChatClient.class);
+        chatClientRequest = mock(ChatClientRequestSpec.class);
+        when(chatClient.prompt()).thenReturn(chatClientRequest);
+        when(chatClientRequest.system(any(String.class))).thenReturn(chatClientRequest);
+        when(chatClientRequest.messages(anyList())).thenReturn(chatClientRequest);
+        when(chatClientRequest.tools(any(Object[].class))).thenReturn(chatClientRequest);
+        when(chatClientRequest.advisors(any(Advisor.class))).thenReturn(chatClientRequest);
+        when(chatClientRequest.advisors(ArgumentMatchers.<Consumer<ChatClient.AdvisorSpec>>any()))
+                .thenReturn(chatClientRequest);
+
+        responseSpec = mock(CallResponseSpec.class);
+        when(chatClientRequest.call()).thenReturn(responseSpec);
+
+        when(chatClientBuilder.build()).thenReturn(chatClient);
+        when(orderRepository.get(anyString())).thenReturn(new Order("123", Order.Status.SHIPPED, null, null));
+
+        agentService = new AgentService(toolCallingManager, chatClientBuilder, mock(ChatMemory.class), orderRepository,
+                mock(DeliveryAssessmentService.class));
     }
 
     @Test
-    void advisorInterceptsCancellationToolCallAndWaitsForExplicitConfirmation() {
-        var advisor = agentService.createCancellationAdvisor("session-1");
-        var intercepted = advisor.doAfterCall(toolCallResponse("123"), mock(CallAdvisorChain.class));
+    void shouldOnlyCallOrderStatusToolWhenAskingForOrderStatus() {
+        // Given
+        var request = new AgentRequest(
+                "Quel est le statut de la commande 123 ?",
+                "session-123456489");
 
-        assertThat(intercepted.chatResponse().hasToolCalls()).isFalse();
-        assertThat(intercepted.chatResponse().getResult().getOutput().getText())
-                .contains("commande 123", "Confirmer l'annulation");
-        assertThat(advisor.pendingCancellation()).isNotNull();
-        assertThat(advisor.pendingCancellation().orderId()).isEqualTo("123");
-        assertThat(advisor.pendingCancellation().status()).isEqualTo("SHIPPED");
+        when(responseSpec.content()).thenReturn("La commande 123 est en cours de traitement.");
 
-        var confirmed = agentService.confirmCancellation(
-                "session-1",
-                advisor.pendingCancellation().confirmationId());
+        // When
+        var response = agentService.executeTask(request);
 
-        assertThat(confirmed.toolExecutions())
-                .extracting("toolName")
-                .containsExactly("checkOrderStatus", "cancelOrder");
-        assertThat(confirmed.answer()).contains("CANCELLED");
+        // Then
+        assertThat(response.status()).isEqualTo(AgentResponse.Status.COMPLETED);
+        assertThat(response.answer()).isEqualTo("La commande 123 est en cours de traitement.");
+        assertThat(response.sessionId()).isEqualTo("session-123456489");
     }
 
     @Test
-    void deliveredOrderCannotBeQueuedOrCancelled() {
-        var advisor = agentService.createCancellationAdvisor("session-2");
-        var intercepted = advisor.doAfterCall(toolCallResponse("456"), mock(CallAdvisorChain.class));
+    void confirmationWithoutPreparedCancellationExpires() {
+        var confirmed = agentService.confirmCancellation("session-1", "invalid-confirmation-id");
 
-        assertThat(intercepted.chatResponse().hasToolCalls()).isFalse();
-        assertThat(intercepted.chatResponse().getResult().getOutput().getText()).contains("déjà livrée");
-        assertThat(advisor.pendingCancellation()).isNull();
-    }
-
-    @Test
-    void staleConfirmationCannotCancelAnOrder() {
-        var advisor = agentService.createCancellationAdvisor("session-3");
-        advisor.doAfterCall(toolCallResponse("123"), mock(CallAdvisorChain.class));
-
-        var confirmed = agentService.confirmCancellation("session-3", "invalid-confirmation-id");
-
-        assertThat(confirmed.status()).isEqualTo("confirmation_expired");
+        assertThat(confirmed.status()).isEqualTo(AgentResponse.Status.CONFIRMATION_EXPIRED);
         assertThat(confirmed.toolExecutions()).isEmpty();
-    }
-
-    private ChatClientResponse toolCallResponse(String orderId) {
-        var toolCall = new AssistantMessage.ToolCall(
-                "call-1",
-                "function",
-                "cancelOrder",
-                "{\"orderId\":\"" + orderId + "\"}");
-        var message = AssistantMessage.builder().toolCalls(List.of(toolCall)).build();
-        return new ChatClientResponse(new ChatResponse(List.of(new Generation(message))), Map.of());
+        assertThat(confirmed.sessionId()).isEqualTo("session-1");
     }
 }

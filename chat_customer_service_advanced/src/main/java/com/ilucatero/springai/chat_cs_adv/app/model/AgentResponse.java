@@ -6,13 +6,18 @@ public record AgentResponse(
         String answer,
         String sessionId,
         List<ToolExecutionInfo> toolExecutions,
-        String status,
-        CancellationConfirmation pendingCancellation) {
+        Status status,
+        OrderUserActionConfirmation userActionOrderConfirmation) {
+
+    public enum Status {
+        COMPLETED, CONFIRMATION_EXPIRED, FAILED
+    }
+
     public AgentResponse {
         toolExecutions = toolExecutions == null ? List.of() : List.copyOf(toolExecutions);
     }
 
-    public AgentResponse(String answer, String sessionId, List<ToolExecutionInfo> toolExecutions, String status) {
+    public AgentResponse(String answer, String sessionId, List<ToolExecutionInfo> toolExecutions, Status status) {
         this(answer, sessionId, toolExecutions, status, null);
     }
 }

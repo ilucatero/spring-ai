@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: 8082
 
 spring:
   config:
@@ -12,6 +12,12 @@ spring:
       api-key: ${OPENAI_API_KEY}
       chat:
         model: ${OPENAI_MODEL}
+    # true, otherwise error message taken as input messages
+    tools:
+      throw-exception-on-error: true
+      limits:
+        max-total-tool-calls: 3
+        on-limit-exceeded: THROW
 
 # Spring Boot Actuator
 management:
