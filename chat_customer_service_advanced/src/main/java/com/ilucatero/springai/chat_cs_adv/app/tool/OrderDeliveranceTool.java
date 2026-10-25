@@ -7,6 +7,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
+import com.ilucatero.springai.chat_cs_adv.app.service.DeliveryAssessmentService;
 
 import java.util.List;
 
@@ -19,19 +20,28 @@ public class OrderDeliveranceTool {
 
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
     private final OrderRepository orderRepository;
+    private final DeliveryAssessmentService deliveryAssessmentService;
 
-    public OrderDeliveranceTool(ToolExecutionInfo.Recorder toolExecutionRecorder, OrderRepository orderRepository) {
+    public OrderDeliveranceTool(ToolExecutionInfo.Recorder toolExecutionRecorder, OrderRepository orderRepository,
+            DeliveryAssessmentService deliveryAssessmentService) {
         this.toolExecutionRecorder = toolExecutionRecorder;
         this.orderRepository = orderRepository;
+        this.deliveryAssessmentService = deliveryAssessmentService;
     }
 
-    @Tool(name = TOOL_NAME_GET_DELIVERY_DATE, description = "Get the programmed or delivered date, dependeing on its status, for an order by its ID")
+    @Tool(name = TOOL_NAME_GET_DELIVERY_DATE, description = "Get the scheduled delivery date and assess whether that date has passed, for an order by its ID.")
     public String getDeliveryDate(@ToolParam(description = "Order identifier") String orderId) {
         return toolExecutionRecorder.record(TOOL_NAME_GET_DELIVERY_DATE,
                 List.of("orderId=" + orderId),
                 () -> {
                     log.info("EXECUTED : Getting delivery date for order ID: {}", orderId);
-                    return orderRepository.get(orderId).deliveryDate;
+                    var deliveryDate = orderRepository.get(orderId).deliveryDate;
+                    var assessment = deliveryAssessmentService.assess(deliveryDate);
+                    log.info("EXECUTED : order assesment: {}", assessment);
+                    return """
+                            Scheduled delivery date: %s
+                            Delivery assessment: %s
+                            """.formatted(deliveryDate, assessment);
                 });
     }
 

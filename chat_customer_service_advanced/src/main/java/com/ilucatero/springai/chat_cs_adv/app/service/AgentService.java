@@ -97,7 +97,8 @@ public class AgentService {
      * parametered limits wont be used
      */
     public AgentService(ToolCallingManager toolCallingManager, ChatClient.Builder chatClientBuilder,
-            ChatMemory chatMemory, OrderRepository orderRepository) {
+            ChatMemory chatMemory, OrderRepository orderRepository,
+            DeliveryAssessmentService deliveryAssessmentService) {
 
         this.toolCallingManager = toolCallingManager;
         this.chatClient = chatClientBuilder
@@ -107,7 +108,8 @@ public class AgentService {
         this.orderRepository = orderRepository;
 
         this.toolExecutionRecorder = new ToolExecutionInfo.Recorder();
-        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository);
+        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
+                deliveryAssessmentService);
         this.orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
         this.orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
 

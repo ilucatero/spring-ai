@@ -8,18 +8,15 @@ import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.ChatClient.AdvisorSpec;
 import org.springframework.ai.chat.client.ChatClient.CallResponseSpec;
 import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.model.tool.ToolCallingManager;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
@@ -55,7 +52,8 @@ class AgentServiceTest {
         when(chatClientBuilder.build()).thenReturn(chatClient);
         when(orderRepository.get(anyString())).thenReturn(new Order("123", Order.Status.SHIPPED, null, null));
 
-        agentService = new AgentService(toolCallingManager, chatClientBuilder, mock(ChatMemory.class), orderRepository);
+        agentService = new AgentService(toolCallingManager, chatClientBuilder, mock(ChatMemory.class), orderRepository,
+                mock(DeliveryAssessmentService.class));
     }
 
     @Test

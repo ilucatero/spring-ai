@@ -25,7 +25,7 @@ public class OrderRepository {
                     "Delivering by FEDDEX on 2024-06-20. Tracking number: 987654321."),
             new Order("9877", Order.Status.DELIVERING, "2024-06-20",
                     "Delivered by UPS on 2024-06-20. Tracking number: 987654321."),
-            new Order("999", Order.Status.READY_FOR_PICKUP, "2024-06-20",
+            new Order("999", Order.Status.READY_FOR_PICKUP, "2099-06-20",
                     "Order ready for pickup by UPS on 2024-06-20. Tracking number: 987654321."));
 
     public Order get(String orderId) {
@@ -34,8 +34,8 @@ public class OrderRepository {
                 .findFirst()
                 // See : spring.ai.tools.throw-exception-on-error=true
                 // .orElseThrow();
-                //.orElseThrow(() -> new RuntimeException("Technical error"));
-         .orElse(new Order(orderId, Order.Status.ORDER_NOT_FOUND, null, null));
+                // .orElseThrow(() -> new RuntimeException("Technical error"));
+                .orElse(new Order(orderId, Order.Status.ORDER_NOT_FOUND, null, null));
     }
 
     public Order.Status cancel(String orderId) {
