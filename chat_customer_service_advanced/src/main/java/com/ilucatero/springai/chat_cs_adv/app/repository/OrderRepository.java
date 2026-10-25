@@ -32,7 +32,10 @@ public class OrderRepository {
         return ORDER_MAP.stream()
                 .filter(order -> order.orderId.equals(orderId))
                 .findFirst()
-                .orElse(new Order(orderId, Order.Status.ORDER_NOT_FOUND, null, null));
+                // See : spring.ai.tools.throw-exception-on-error=true
+                // .orElseThrow();
+                //.orElseThrow(() -> new RuntimeException("Technical error"));
+         .orElse(new Order(orderId, Order.Status.ORDER_NOT_FOUND, null, null));
     }
 
     public Order.Status cancel(String orderId) {

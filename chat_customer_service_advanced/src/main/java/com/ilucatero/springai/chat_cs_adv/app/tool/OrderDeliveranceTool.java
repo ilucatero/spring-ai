@@ -27,7 +27,7 @@ public class OrderDeliveranceTool {
         return toolExecutionRecorder.record("getDeliveryDate",
                 List.of("orderId=" + orderId),
                 () -> {
-                    log.info("Getting delivery date for order ID: {}", orderId);
+                    log.info("EXECUTED : Getting delivery date for order ID: {}", orderId);
                     return orderRepository.get(orderId).deliveryDate;
                 });
     }
@@ -37,7 +37,7 @@ public class OrderDeliveranceTool {
         return toolExecutionRecorder.record("getDeliveryDetails",
                 List.of("orderId=" + orderId),
                 () -> {
-                    log.info("Getting delivery details for order ID: {}", orderId);
+                    log.info("EXECUTED : Getting delivery details for order ID: {}", orderId);
                     // Simulate delivery details retrieval (in production, call real API)
                     return orderRepository.get(orderId).deliveryDetails;
                 });

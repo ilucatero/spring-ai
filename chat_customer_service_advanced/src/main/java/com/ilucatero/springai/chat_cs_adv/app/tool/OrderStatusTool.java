@@ -28,7 +28,7 @@ public class OrderStatusTool {
         return toolExecutionRecorder.record("checkOrderStatus",
                 List.of("orderId=" + orderId),
                 () -> {
-                    log.info("Checking order status for ID: {}", orderId);
+                    log.info("EXECUTED : Checking order status for ID: {}", orderId);
                     return orderRepository.get(orderId).status;
                 });
     }

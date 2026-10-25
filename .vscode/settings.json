@@ -8,10 +8,18 @@
     }
   ],
   "maven.terminal.favorites": [
-    "clean",
-    "test",
-    "package",
-    "spring-boot:run"
+    {
+      "command": "clean"
+    },
+    {
+      "command": "test",
+    },
+    {
+      "command": "package"
+    },
+    {
+      "command": "spring-boot:run"
+    }
   ],
   "editor.formatOnSave": true,
   "editor.rulers": [

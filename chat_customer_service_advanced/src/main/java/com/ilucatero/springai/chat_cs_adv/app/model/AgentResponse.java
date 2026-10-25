@@ -7,7 +7,7 @@ public record AgentResponse(
         String sessionId,
         List<ToolExecutionInfo> toolExecutions,
         Status status,
-        CancellationConfirmation pendingCancellation) {
+        OrderUserActionConfirmation userActionOrderConfirmation) {
 
     public enum Status {
         COMPLETED, CONFIRMATION_EXPIRED, FAILED

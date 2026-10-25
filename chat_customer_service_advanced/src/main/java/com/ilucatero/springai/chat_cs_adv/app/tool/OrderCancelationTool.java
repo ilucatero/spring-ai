@@ -17,17 +17,19 @@ public class OrderCancelationTool {
     private final ToolExecutionInfo.Recorder toolExecutionRecorder;
     private final OrderRepository orderRepository;
 
+    public static final String CANCEL_ORDER_TOOL = "cancelOrder";
+
     public OrderCancelationTool(ToolExecutionInfo.Recorder toolExecutionRecorder, OrderRepository orderRepository) {
         this.toolExecutionRecorder = toolExecutionRecorder;
         this.orderRepository = orderRepository;
     }
 
-    @Tool(description = "Request cancellation of an order by ID. The application verifies its status and requires explicit user confirmation before it is cancelled.")
+    @Tool(name = CANCEL_ORDER_TOOL, description = "Request cancellation of an order by ID. The application verifies its status and requires explicit user confirmation before it is cancelled.")
     public String cancelOrder(@ToolParam(description = "Order identifier") String orderId) {
         return toolExecutionRecorder.record("cancelOrder",
                 List.of("orderId=" + orderId),
                 () -> {
-                    log.info("Cancelling order for ID: {}", orderId);
+                    log.info("EXECUTED : Cancelling order for ID: {}", orderId);
                     return orderRepository.cancel(orderId).name();
                 });
     }

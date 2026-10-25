@@ -25,7 +25,6 @@ public class AgentController {
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
 
     private static final int MAX_MESSAGE_LENGTH = 1000;
-    private static final String CONFIRMATION_EXPIRED = "confirmation_expired";
 
     private final AgentService agentService;
 
@@ -116,7 +115,7 @@ public class AgentController {
 
     private ResponseEntity<Map<String, Object>> cancellationResponse(AgentResponse response) {
         var body = responseBody(response);
-        return CONFIRMATION_EXPIRED.equals(response.status())
+        return AgentResponse.Status.CONFIRMATION_EXPIRED.equals(response.status())
                 ? ResponseEntity.status(HttpStatus.CONFLICT).body(body)
                 : ResponseEntity.ok(body);
     }
@@ -128,8 +127,8 @@ public class AgentController {
         body.put("toolExecutions", response.toolExecutions());
         body.put("toolsUsed", response.toolExecutions().size());
         body.put("status", response.status());
-        if (response.pendingCancellation() != null) {
-            body.put("pendingCancellation", response.pendingCancellation());
+        if (response.userActionOrderConfirmation() != null) {
+            body.put("pendingCancellation", response.userActionOrderConfirmation());
         }
         return body;
     }
