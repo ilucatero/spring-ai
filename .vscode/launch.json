@@ -22,5 +22,12 @@
       "mainClass": "${workspaceFolder}/chat_customer_service_advanced/src/main/java/com/ilucatero/springai/chat_cs_adv/app/Application.java",
       "cwd": "${workspaceFolder}/chat_customer_service_advanced"
     },
+    {
+      "type": "java",
+      "name": "Spring AI : Customer Service Advanced MCP",
+      "request": "launch",
+      "mainClass": "${workspaceFolder}/chat_customer_service_advanced_mcp/src/main/java/com/ilucatero/springai/chat_cs_adv_mcp/app/Application.java",
+      "cwd": "${workspaceFolder}/chat_customer_service_advanced_mcp"
+    },
   ]
 }

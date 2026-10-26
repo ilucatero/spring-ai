@@ -1,6 +1,6 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
   <modelVersion>4.0.0</modelVersion>
 
@@ -14,10 +14,12 @@
     <module>chat</module>
     <module>chat_customer_service</module>
     <module>chat_customer_service_advanced</module>
+    <module>chat_customer_service_advanced_mcp</module>
   </modules>
 
   <properties>
-    <!-- Use Java 25 by default.  Override by setting the JAVA_HOME environment variable or the `java.version` property -->
+    <!-- Use Java 25 by default.  Override by setting the JAVA_HOME environment variable or the
+    `java.version` property -->
     <java.version>25</java.version>
 
     <spring.boot.version>4.1.2</spring.boot.version>
@@ -26,8 +28,12 @@
     <!-- Must match the openai-java-core that spring-ai-openai resolves -->
     <openai.java.version>4.49.0</openai.java.version>
 
+    <!-- other dependencies -->
+    <wiremock.version>3.13.1</wiremock.version>
+
     <!-- Maven plugin versions -->
     <maven.surefire.version>3.5.4</maven.surefire.version>
+    <maven.failsafe.version>3.5.4</maven.failsafe.version>
     <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
 
     <!-- Encoding -->
@@ -64,6 +70,12 @@
       </dependency>
 
       <!-- Other dependencies -->
+      <dependency>
+        <groupId>org.wiremock</groupId>
+        <artifactId>wiremock-standalone</artifactId>
+        <version>${wiremock.version}</version>
+        <scope>test</scope>
+      </dependency>
 
     </dependencies>
   </dependencyManagement>
@@ -74,23 +86,18 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
     </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
-    <dependency>
-      <groupId>org.springframework.ai</groupId>
-      <artifactId>spring-ai-starter-model-openai</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.ai</groupId>
-      <artifactId>spring-ai-client-chat</artifactId>
-    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 
   <build>
@@ -117,8 +124,15 @@
           <artifactId>maven-surefire-plugin</artifactId>
           <version>${maven.surefire.version}</version>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>${maven.failsafe.version}</version>
+        </plugin>
+
       </plugins>
     </pluginManagement>
+
     <plugins>
       <!-- Repackage runnable child modules; packaging-only aggregators are skipped. -->
       <plugin>
@@ -132,6 +146,29 @@
           </execution>
         </executions>
       </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+          <useModulePath>false</useModulePath>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
     </plugins>
   </build>
 

@@ -1,0 +1,16 @@
+{
+  "electronics": {
+    "returnPeriodDays": 30,
+    "conditions": [
+      "Product must be in good condition",
+      "Original packaging is recommended"
+    ]
+  },
+  "clothing": {
+    "returnPeriodDays": 14,
+    "conditions": [
+      "Product must be unworn",
+      "Tags must still be attached"
+    ]
+  }
+}

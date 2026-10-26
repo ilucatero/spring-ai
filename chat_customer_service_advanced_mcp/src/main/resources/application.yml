@@ -1,0 +1,33 @@
+server:
+  port: 8092
+
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: spring-ai-chat-mcp
+  ai:
+    mcp:
+      server:
+        name: order-mcp-server
+        version: 1.0.0
+        protocol: STREAMABLE
+
+
+# Spring Boot Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Logging configuration
+logging:
+  level:
+    "[com.ilucatero.springai]": INFO
+    "[org.springframework.ai]": DEBUG
+
+# Values are read from environment variables (see .env)
