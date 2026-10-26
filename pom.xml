@@ -13,8 +13,9 @@
   <modules>
     <module>chat</module>
     <module>chat_customer_service</module>
-    <module>chat_customer_service_advanced</module>
     <module>chat_customer_service_advanced_mcp</module>
+    <module>chat_customer_service_advanced</module>
+
   </modules>
 
   <properties>

@@ -18,6 +18,16 @@ spring:
       limits:
         max-total-tool-calls: 3
         on-limit-exceeded: THROW
+    mcp:
+      client:
+        type: SYNC
+        request-timeout: 30s
+        streamable-http:
+          connections:
+            order-mcp-server:
+              url: http://localhost:8092
+              endpoint: /mcp
+
 
 # Spring Boot Actuator
 management:

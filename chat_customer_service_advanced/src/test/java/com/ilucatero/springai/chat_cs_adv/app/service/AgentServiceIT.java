@@ -9,19 +9,43 @@ import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-@SpringBootTest
+// todo : to reactiavate mcp-client when autostart for IT is configured
+@SpringBootTest(properties = "spring.ai.mcp.client.enabled=false")
+@Import(AgentServiceIT.NoMcpServerConfiguration.class)
 class AgentServiceIT {
 
     private static final WireMockServer wireMock = new WireMockServer(options().dynamicPort());
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class NoMcpServerConfiguration {
+
+        /** Send an empty array of ToolCallbacks */
+        @Bean
+        @Primary
+        SyncMcpToolCallbackProvider syncMcpToolCallbackProvider() {
+            var provider = mock(SyncMcpToolCallbackProvider.class);
+            when(provider.getToolCallbacks()).thenReturn(new ToolCallback[0]);
+            return provider;
+        }
+    }
 
     @Autowired
     private AgentService agentService;
@@ -46,6 +70,7 @@ class AgentServiceIT {
 
     @BeforeEach
     void configureModelResponses() {
+
         wireMock.resetAll();
 
         wireMock.stubFor(post(urlPathEqualTo("/chat/completions"))

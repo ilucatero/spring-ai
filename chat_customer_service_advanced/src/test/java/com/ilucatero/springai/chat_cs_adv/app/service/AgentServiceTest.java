@@ -7,18 +7,22 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClient.CallResponseSpec;
 import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.tool.ToolCallbackProvider;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
@@ -54,8 +58,32 @@ class AgentServiceTest {
         when(chatClientBuilder.build()).thenReturn(chatClient);
         when(orderRepository.get(anyString())).thenReturn(new Order("123", Order.Status.SHIPPED, null, null));
 
-        agentService = new AgentService(toolCallingManager, chatClientBuilder, mock(ChatMemory.class), orderRepository,
-                mock(DeliveryAssessmentService.class));
+        agentService = new AgentService(toolCallingManager,
+                chatClientBuilder,
+                mock(ChatMemory.class),
+                orderRepository,
+                mock(DeliveryAssessmentService.class),
+                mock(ToolCallbackProvider.class));
+    }
+
+    @Test
+    void shouldRegisterMcpToolCallbackProvider() {
+        // Given
+        var request = new AgentRequest(
+                "Quelle est la politique de retour des produits électroniques ?",
+                "session-mcp");
+
+        when(responseSpec.content()).thenReturn("Retour possible sous 30 jours.");
+
+        // When
+        agentService.executeTask(request);
+
+        // Then
+        System.out.println("MockingDetails:" + Mockito.mockingDetails(chatClientRequest).getInvocations());
+
+        var captor = ArgumentCaptor.forClass(Object[].class);
+        verify(chatClientRequest).tools(captor.capture());
+        assertThat(captor.getValue()).anyMatch(ToolCallbackProvider.class::isInstance);
     }
 
     @Test

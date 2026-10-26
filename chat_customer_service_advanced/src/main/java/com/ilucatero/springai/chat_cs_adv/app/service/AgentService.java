@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.model.tool.ToolCallingManager;
-
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -85,6 +85,7 @@ public class AgentService {
     private final OrderDeliveranceTool orderDeliveranceTool;
     private final OrderStatusTool orderStatusTool;
     private final OrderCancelationTool orderCancelationTool;
+    private final ToolCallbackProvider mcpTools;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
     private final Map<String, OrderUserActionConfirmation> pendingOrderUserActions = new ConcurrentHashMap<>();
@@ -96,9 +97,12 @@ public class AgentService {
      * IMPORTANT : never build a ToolCallingManager inline, otherwise the
      * parametered limits wont be used
      */
-    public AgentService(ToolCallingManager toolCallingManager, ChatClient.Builder chatClientBuilder,
-            ChatMemory chatMemory, OrderRepository orderRepository,
-            DeliveryAssessmentService deliveryAssessmentService) {
+    public AgentService(ToolCallingManager toolCallingManager,
+            ChatClient.Builder chatClientBuilder,
+            ChatMemory chatMemory,
+            OrderRepository orderRepository,
+            DeliveryAssessmentService deliveryAssessmentService,
+            ToolCallbackProvider mcpTools) {
 
         this.toolCallingManager = toolCallingManager;
         this.chatClient = chatClientBuilder
@@ -106,6 +110,8 @@ public class AgentService {
                 .build();
         this.chatMemory = chatMemory;
         this.orderRepository = orderRepository;
+
+        this.mcpTools = mcpTools;
 
         this.toolExecutionRecorder = new ToolExecutionInfo.Recorder();
         this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
@@ -159,7 +165,7 @@ public class AgentService {
                     .prompt()
                     .system(PROMT_SYSTEM)
                     .messages(messages)
-                    .tools(orderDeliveranceTool, orderStatusTool, orderCancelationTool)
+                    .tools(orderDeliveranceTool, orderStatusTool, orderCancelationTool, mcpTools)
                     .advisors(cancellationAdvisor)
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
                     .call()
