@@ -61,7 +61,8 @@ class McpClientConfig {
             var name = callback.getToolDefinition().name();
             var start = System.nanoTime();
 
-            log.info("MCP tool call: name={}, arguments={}", name, input);
+            // important : arguments input could contain user private data
+            log.debug("MCP tool call: name={}, arguments={}", name, input);
 
             try {
                 String result = context == null

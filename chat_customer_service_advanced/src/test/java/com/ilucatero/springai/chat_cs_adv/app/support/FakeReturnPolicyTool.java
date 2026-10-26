@@ -7,6 +7,17 @@ import org.springframework.ai.chat.model.ToolContext;
 
 public class FakeReturnPolicyTool implements ToolCallback {
 
+    private int callCount;
+    private boolean isErrorMode;
+
+    public FakeReturnPolicyTool() {
+        this(false);
+    }
+
+    public FakeReturnPolicyTool(boolean isErrorMode) {
+        this.isErrorMode = isErrorMode;
+    }
+
     @Override
     public ToolDefinition getToolDefinition() {
         return ToolDefinition.builder()
@@ -35,6 +46,11 @@ public class FakeReturnPolicyTool implements ToolCallback {
     public String call(String input) {
         System.out.println("FakeReturnPolicyTool called with: " + input);
 
+        callCount++;
+        if (isErrorMode) {
+            throw new RuntimeException("Error on FakeReturnPolicyTool");
+        }
+
         if (input.contains("electronics")) {
             return "Return period: 30 days";
         }
@@ -45,5 +61,9 @@ public class FakeReturnPolicyTool implements ToolCallback {
     @Override
     public String call(String input, ToolContext context) {
         return call(input);
+    }
+
+    public int getCallCount() {
+        return callCount;
     }
 }
