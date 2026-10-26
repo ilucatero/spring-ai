@@ -8,7 +8,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.ai.tool.ToolCallbackProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -28,6 +27,7 @@ import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
+import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor;
 import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor.OrderUserActionResult;
 
@@ -59,6 +59,7 @@ public class AgentService {
 
             IMPORTANT — TOOL ERROR HANDLING:
              - When a tool execution fails with a technical error, do not interpret the error as ORDER_NOT_FOUND.
+             - When tool is or not available or cannot be called, never give recommendations nor assume values, just explait their unavailability.
              - Do not claim that the order does not exist.
              - Explain that the order information could not be retrieved due to a technical problem.
              - Never invent the result of a failed tool call.
@@ -85,7 +86,7 @@ public class AgentService {
     private final OrderDeliveranceTool orderDeliveranceTool;
     private final OrderStatusTool orderStatusTool;
     private final OrderCancelationTool orderCancelationTool;
-    private final ToolCallbackProvider mcpTools;
+    private final McpToolRegistry mcpTools;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
     private final Map<String, OrderUserActionConfirmation> pendingOrderUserActions = new ConcurrentHashMap<>();
@@ -102,7 +103,7 @@ public class AgentService {
             ChatMemory chatMemory,
             OrderRepository orderRepository,
             DeliveryAssessmentService deliveryAssessmentService,
-            ToolCallbackProvider mcpTools) {
+            McpToolRegistry mcpTools) {
 
         this.toolCallingManager = toolCallingManager;
         this.chatClient = chatClientBuilder
@@ -165,7 +166,8 @@ public class AgentService {
                     .prompt()
                     .system(PROMT_SYSTEM)
                     .messages(messages)
-                    .tools(orderDeliveranceTool, orderStatusTool, orderCancelationTool, mcpTools)
+                    .tools(orderDeliveranceTool, orderStatusTool, orderCancelationTool)
+                    .tools((Object[]) mcpTools.getToolCallbacks())
                     .advisors(cancellationAdvisor)
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
                     .call()

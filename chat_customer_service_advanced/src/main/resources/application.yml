@@ -22,6 +22,8 @@ spring:
       client:
         type: SYNC
         initialized: false # allows lazy initialization to let spring be ready but required also lazy discovery
+        toolcallback:
+          enabled: false
         request-timeout: 30s
         streamable-http:
           connections:
