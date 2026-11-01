@@ -13,7 +13,6 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.ToolCallbackProvider;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
@@ -24,12 +23,13 @@ import com.ilucatero.springai.chat_cs_adv.app.service.DeliveryAssessmentService.
 import com.ilucatero.springai.chat_cs_adv.app.support.FakeReturnPolicyTool;
 import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatModel;
 import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatResponses;
+import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceOrchestrationTest {
 
     OrderRepository orderRepository;
     ChatMemory chatMemory;
-    ToolCallbackProvider mcpTools;
+    McpToolRegistry mcpToolRegistry;
     DefaultToolCallingManager toolCallingManager;
     DeliveryAssessmentService deliveryAssessmentService;
 
@@ -40,8 +40,8 @@ class AgentServiceOrchestrationTest {
         orderRepository = mock(OrderRepository.class);
         deliveryAssessmentService = mock(DeliveryAssessmentService.class);
 
-        mcpTools = mock(ToolCallbackProvider.class);
-        when(mcpTools.getToolCallbacks()).thenReturn(new org.springframework.ai.tool.ToolCallback[0]);
+        mcpToolRegistry = mock(McpToolRegistry.class);
+        when(mcpToolRegistry.getToolCallbacks()).thenReturn(new org.springframework.ai.tool.ToolCallback[0]);
     }
 
     @Test
@@ -56,7 +56,7 @@ class AgentServiceOrchestrationTest {
                 ScriptedChatResponses.toolCall("checkOrderStatus", "{\"orderId\":\"123\"}"),
                 ScriptedChatResponses.finalAnswer("La commande 123 a été expédiée."));
 
-        var agentService = createAgentService(model, mcpTools);
+        var agentService = createAgentService(model, mcpToolRegistry);
 
         // when
         var response = agentService.executeTask(new AgentRequest(
@@ -80,7 +80,7 @@ class AgentServiceOrchestrationTest {
                 ScriptedChatResponses.finalAnswer(
                         "I couldn't retrieve the order information due to a technical problem."));
 
-        var agentService = createAgentService(model, mcpTools);
+        var agentService = createAgentService(model, mcpToolRegistry);
 
         // when
         var response = agentService.executeTask(new AgentRequest(
@@ -98,15 +98,15 @@ class AgentServiceOrchestrationTest {
         // Given
         var mcpToolFake = new FakeReturnPolicyTool();
 
-        var mcpTools = mock(ToolCallbackProvider.class);
-        when(mcpTools.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpToolFake });
+        var mcpToolRegistry = mock(McpToolRegistry.class);
+        when(mcpToolRegistry.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpToolFake });
 
         var model = new ScriptedChatModel(
                 ScriptedChatResponses.toolCall("getReturnPolicy", "{\"category\":\"electronics\"}"),
                 ScriptedChatResponses.finalAnswer(
                         "Les produits électroniques peuvent être retournés sous 30 jours."));
 
-        var agentService = createAgentService(model, mcpTools);
+        var agentService = createAgentService(model, mcpToolRegistry);
 
         // When
         var response = agentService.executeTask(new AgentRequest(
@@ -124,15 +124,15 @@ class AgentServiceOrchestrationTest {
         // Given
         var mcpToolFake = new FakeReturnPolicyTool(true);
 
-        var mcpTools = mock(ToolCallbackProvider.class);
-        when(mcpTools.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpToolFake });
+        var mcpToolRegistry = mock(McpToolRegistry.class);
+        when(mcpToolRegistry.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpToolFake });
 
         var model = new ScriptedChatModel(
                 ScriptedChatResponses.toolCall("getReturnPolicy", "{\"category\":\"electronics\"}"),
                 ScriptedChatResponses.finalAnswer(
                         "Je ne peux pas vérifier la politique de retour actuellement."));
 
-        var agentService = createAgentService(model, mcpTools);
+        var agentService = createAgentService(model, mcpToolRegistry);
 
         // When
         var response = agentService.executeTask(new AgentRequest(
@@ -149,7 +149,7 @@ class AgentServiceOrchestrationTest {
     void shouldAnswerWithoutCallingAnyTool() {
         var model = new ScriptedChatModel(ScriptedChatResponses.finalAnswer("Bonjour ! Comment puis-je vous aider ?"));
 
-        var agentService = createAgentService(model, mcpTools);
+        var agentService = createAgentService(model, mcpToolRegistry);
 
         var response = agentService.executeTask(new AgentRequest("session-123", "Bonjour"));
 
@@ -162,8 +162,8 @@ class AgentServiceOrchestrationTest {
     void shouldExecuteBusinessAndMcpToolsInSameTask() {
         var mcpTool = new FakeReturnPolicyTool();
 
-        var mcpTools = mock(ToolCallbackProvider.class);
-        when(mcpTools.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpTool });
+        var mcpToolRegistry = mock(McpToolRegistry.class);
+        when(mcpToolRegistry.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpTool });
 
         var model = new ScriptedChatModel(
                 ScriptedChatResponses.toolCall("checkOrderStatus", "{\"orderId\":\"123\"}"),
@@ -171,7 +171,7 @@ class AgentServiceOrchestrationTest {
                 ScriptedChatResponses.finalAnswer(
                         "La commande 123 a été expédiée. Les produits électroniques sont retournables sous 30 jours."));
 
-        var agentService = createAgentService(model, mcpTools);
+        var agentService = createAgentService(model, mcpToolRegistry);
 
         var response = agentService.executeTask(new AgentRequest(
                 "Quel est le statut de la commande 123 et la politique de retour des produits électroniques ?",
@@ -188,7 +188,7 @@ class AgentServiceOrchestrationTest {
 
     }
 
-    private AgentService createAgentService(ChatModel model, ToolCallbackProvider mcpTools) {
+    private AgentService createAgentService(ChatModel model, McpToolRegistry mcpTools) {
         return new AgentService(
                 toolCallingManager,
                 ChatClient.builder(model),

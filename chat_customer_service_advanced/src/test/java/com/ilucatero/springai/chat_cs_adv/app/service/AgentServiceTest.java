@@ -22,12 +22,13 @@ import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.ai.tool.ToolCallback;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
+import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceTest {
 
@@ -35,6 +36,7 @@ class AgentServiceTest {
 
     private ChatClientRequestSpec chatClientRequest;
     private CallResponseSpec responseSpec;
+    private ToolCallback mcpToolCallback;
 
     @BeforeEach
     void setUp() {
@@ -58,12 +60,19 @@ class AgentServiceTest {
         when(chatClientBuilder.build()).thenReturn(chatClient);
         when(orderRepository.get(anyString())).thenReturn(new Order("123", Order.Status.SHIPPED, null, null));
 
-        agentService = new AgentService(toolCallingManager,
+
+        var mcpToolRegistry = mock(McpToolRegistry.class);
+        mcpToolCallback = mock(ToolCallback.class);
+        when(mcpToolRegistry.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpToolCallback });
+
+        agentService = new AgentService(
+                toolCallingManager,
                 chatClientBuilder,
                 mock(ChatMemory.class),
                 orderRepository,
                 mock(DeliveryAssessmentService.class),
-                mock(ToolCallbackProvider.class));
+                mcpToolRegistry);
+
     }
 
     @Test
@@ -83,7 +92,7 @@ class AgentServiceTest {
 
         var captor = ArgumentCaptor.forClass(Object[].class);
         verify(chatClientRequest).tools(captor.capture());
-        assertThat(captor.getValue()).anyMatch(ToolCallbackProvider.class::isInstance);
+        assertThat(captor.getValue()).contains(mcpToolCallback);
     }
 
     @Test
