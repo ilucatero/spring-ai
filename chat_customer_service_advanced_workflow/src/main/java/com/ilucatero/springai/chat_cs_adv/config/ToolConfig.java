@@ -48,13 +48,11 @@ class ToolConfig {
     OrderToolSet orderToolSet(
             ToolExecutionInfo.Recorder toolExecutionRecorder,
             OrderStatusTool orderStatusTool,
-            OrderDeliveranceTool orderDeliveranceTool,
-            OrderCancelationTool orderCancelationTool) {
+            OrderDeliveranceTool orderDeliveranceTool) {
 
         return new OrderToolSet(
                 toolExecutionRecorder,
                 orderStatusTool,
-                orderDeliveranceTool,
-                orderCancelationTool);
+                orderDeliveranceTool);
     }
 }

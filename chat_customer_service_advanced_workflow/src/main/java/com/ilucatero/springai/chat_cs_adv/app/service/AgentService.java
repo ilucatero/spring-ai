@@ -13,31 +13,24 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
-import com.ilucatero.springai.chat_cs_adv.app.model.CancellationWorkflowContext;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderUserActionConfirmation;
+import com.ilucatero.springai.chat_cs_adv.app.model.UserIntent;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.repository.SystemPromptRepository;
-import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
-import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor;
-import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor.OrderUserActionResult;
 
 @Service
 public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ChatClient chatClient;
     private final ChatMemory chatMemory;
@@ -48,6 +41,7 @@ public class AgentService {
     private final OrderToolSet orderToolSet;
     private final McpToolRegistry mcpTools;
 
+    private final IntentService intentService;
     private final OrderCancellationWorkflowService cancellationWorkflowService;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
@@ -67,11 +61,10 @@ public class AgentService {
             ToolCallingManager toolCallingManager,
             OrderToolSet orderToolSet,
             McpToolRegistry mcpTools,
+            IntentService intentService,
             OrderCancellationWorkflowService cancellationWorkflowService) {
 
-        this.chatClient = chatClientBuilder
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
-                .build();
+        this.chatClient = chatClientBuilder.build();
         this.chatMemory = chatMemory;
         this.orderRepository = orderRepository;
 
@@ -79,9 +72,9 @@ public class AgentService {
         this.mcpTools = mcpTools;
         this.orderToolSet = orderToolSet;
 
+        this.intentService = intentService;
         this.cancellationWorkflowService = cancellationWorkflowService;
 
-        log.info("Agent service initialized with Spring AI ChatClient");
     }
 
     /**
@@ -108,16 +101,113 @@ public class AgentService {
         inspectToolCallingManager(toolCallingManager);
 
         final var sessionId = request.sessionId() == null ? createAgentSession() : request.sessionId();
-
         activeSessions.add(sessionId);
-        pendingOrderUserActions.remove(sessionId);
+        invalidatePendingConfirmation(sessionId);
 
-        orderToolSet.toolExecutionRecorder().start();
-        var cancellationAdvisor = createCancellingToolCallingAdvisor(sessionId);
+        var intent = intentService.detectIntent(request.message(), chatMemory.get(sessionId));
+
+        // Add user message to memory
+        chatMemory.add(sessionId, new UserMessage(request.message()));
+        var response = routeIntent(intent, sessionId, request);
+
+        chatMemory.add(sessionId, new AssistantMessage(response.answer()));
+
+        return response;
+    }
+
+    private AgentResponse routeIntent(UserIntent intent, String sessionId, AgentRequest request) {
+        return switch (intent.intent()) {
+            case CANCEL_ORDER ->
+                createCancellationResponse(sessionId, intent);
+            case ORDER_STATUS ->
+                handleOrderStatus(intent.orderId(), sessionId);
+            case GENERAL_QUESTION ->
+                handleGeneralQuestion(sessionId, request.message());
+        };
+    }
+
+    private void invalidatePendingConfirmation(String sessionId) {
+        var pending = pendingOrderUserActions.remove(sessionId);
+
+        if (pending != null) {
+            try {
+                cancellationWorkflowService.confirmCancellation(pending.workflowId(), false);
+            } catch (RuntimeException e) {
+                log.warn("Unable to invalidate workflow {}", pending.workflowId(), e);
+            }
+        }
+    }
+
+    private AgentResponse createResponse(String sessionId, String message) {
+        return new AgentResponse(
+                message,
+                sessionId,
+                List.of(),
+                AgentResponse.Status.COMPLETED);
+    }
+
+    private AgentResponse createCancellationResponse(String sessionId, UserIntent intent) {
+
+        if (intent.orderId() == null || intent.orderId().isBlank()) {
+            return createResponse(
+                    sessionId,
+                    "Can you please provide the order number you wish to cancel? I need it to check if the cancellation is possible.");
+        }
 
         try {
-            // Add user message to memory
-            chatMemory.add(sessionId, new UserMessage(request.message()));
+            // get order before workflow runs, to avoid creating a workflow if an exception
+            // occurs
+            var order = orderRepository.get(intent.orderId());
+
+            var context = cancellationWorkflowService.startCancellation(intent.orderId());
+
+            var confirmation = new OrderUserActionConfirmation(
+                    UUID.randomUUID().toString(),
+                    context.workflowId(),
+                    context.orderId(),
+                    context.orderStatus().name(),
+                    order.deliveryDetails);
+            pendingOrderUserActions.put(sessionId, confirmation);
+
+            var message = "The order %s is eligible for cancellation. Please confirm before proceeding."
+                    .formatted(context.orderId());
+
+            return new AgentResponse(
+                    message,
+                    sessionId,
+                    List.of(),
+                    AgentResponse.Status.COMPLETED,
+                    confirmation);
+
+        } catch (IllegalStateException e) {
+            log.info("Cancellation rejected: {}", e.getMessage());
+            return createResponse(sessionId, e.getMessage());
+        }
+    }
+
+    private AgentResponse handleOrderStatus(String orderId, String sessionId) {
+
+        if (orderId == null || orderId.isBlank()) {
+            return createResponse(
+                    sessionId,
+                    "Could you please provide your order number?");
+        }
+
+        var order = orderRepository.get(orderId);
+        var message = "The status of order %s is: %s.".formatted(orderId, order.status);
+
+        return new AgentResponse(
+                message,
+                sessionId,
+                List.of(),
+                AgentResponse.Status.COMPLETED);
+    }
+
+    private AgentResponse handleGeneralQuestion(String sessionId, String message) {
+
+        orderToolSet.toolExecutionRecorder().start();
+
+        try {
 
             // Get conversation history from ChatMemory
             var messages = chatMemory.get(sessionId);
@@ -133,13 +223,9 @@ public class AgentService {
                     .system(SystemPromptRepository.getSystemPrompt())
                     .messages(messages)
                     .tools(toolObjects)
-                    .advisors(cancellationAdvisor)
-                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
                     .call()
                     .content();
 
-            // Add AI response to memory
-            chatMemory.add(sessionId, new AssistantMessage(answer));
             var toolExecutions = orderToolSet.toolExecutionRecorder().stop();
 
             log.info("Agent completed task successfully with {} tool execution(s)", toolExecutions.size());
@@ -148,8 +234,7 @@ public class AgentService {
                     answer,
                     sessionId,
                     toolExecutions,
-                    AgentResponse.Status.COMPLETED,
-                    cancellationAdvisor.pendingOrderUserAction());
+                    AgentResponse.Status.COMPLETED);
 
         } catch (Exception e) {
             var toolExecutions = orderToolSet.toolExecutionRecorder().stop();
@@ -162,67 +247,7 @@ public class AgentService {
         }
     }
 
-    CustomToolCallingAdvisor createCancellingToolCallingAdvisor(String sessionId) {
-        return new CustomToolCallingAdvisor(this.toolCallingManager,
-                toolCall -> OrderCancelationTool.TOOL_NAME_CANCEL_ORDER.equals(toolCall.name()),
-                toolArguments -> prepareCancellation(toolArguments, sessionId));
-    }
-
-    private CustomToolCallingAdvisor.OrderUserActionResult prepareCancellation(String toolArguments, String sessionId) {
-        var orderId = (String) null;
-
-        // parse tool arguments to extrat Order Id
-        try {
-            var orderIdNode = objectMapper.readTree(toolArguments).get("orderId");
-            if (orderIdNode == null || !orderIdNode.isTextual() || orderIdNode.asText().isBlank()) {
-                return new OrderUserActionResult(
-                        "To verify if the cancellation is possible, please provide the order number.",
-                        null);
-            }
-            orderId = orderIdNode.textValue();
-
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            log.warn("Ignoring malformed cancelOrder tool arguments");
-            return new OrderUserActionResult(
-                    "I couldn't identify the order number. Please specify it.",
-                    null);
-        }
-
-        // Start the cancellation workflow
-        CancellationWorkflowContext context;
-        try {
-            context = cancellationWorkflowService.startCancellation(orderId);
-        } catch (IllegalStateException e) {
-            return new CustomToolCallingAdvisor.OrderUserActionResult(e.getMessage(), null);
-        }
-
-        // Retrieve details for the confirmation displayed to the user
-        var details = "[No additional delivery details are available for this order.]";
-        try {
-            details = orderRepository.get(context.orderId()).deliveryDetails;
-        } catch (RuntimeException e) {
-            log.warn("Unable to retrieve delivery details for order {}", context.orderId(), e);
-        }
-
-        // Create confirmation linked to the workflow
-        var confirmation = new OrderUserActionConfirmation(
-                UUID.randomUUID().toString(),
-                context.workflowId(),
-                context.orderId(),
-                context.orderStatus().name(),
-                details);
-
-        pendingOrderUserActions.put(sessionId, confirmation);
-
-        return new CustomToolCallingAdvisor.OrderUserActionResult(
-                "The order %s is eligible for cancellation. Please confirm before proceeding."
-                        .formatted(orderId),
-                confirmation);
-    }
-
-    public AgentResponse confirmCancellation(
-            String sessionId,
-            String confirmationId) {
+    public AgentResponse confirmCancellation(String sessionId, String confirmationId) {
 
         var pending = pendingOrderUserActions.get(sessionId);
         if (pending == null || !pending.confirmationId().equals(confirmationId)) {
@@ -266,12 +291,25 @@ public class AgentService {
             return expiredConfirmationResponse(sessionId);
         }
 
-        var context = cancellationWorkflowService.confirmCancellation(pending.workflowId(), false);
+        orderToolSet.toolExecutionRecorder().start();
 
-        var answer = "The cancellation of order %s has been declined.".formatted(context.orderId());
-        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order %s.".formatted(context.orderId())));
-        chatMemory.add(sessionId, new AssistantMessage(answer));
-        return new AgentResponse(answer, sessionId, List.of(), AgentResponse.Status.COMPLETED);
+        try {
+            var context = cancellationWorkflowService.confirmCancellation(pending.workflowId(), false);
+
+            var answer = "The cancellation of order %s has been declined.".formatted(context.orderId());
+            chatMemory.add(sessionId,
+                    new UserMessage("I do not wish to cancel order %s.".formatted(context.orderId())));
+            chatMemory.add(sessionId, new AssistantMessage(answer));
+
+            return new AgentResponse(answer,
+                    sessionId,
+                    orderToolSet.toolExecutionRecorder().stop(),
+                    AgentResponse.Status.COMPLETED);
+
+        } catch (RuntimeException e) {
+            orderToolSet.toolExecutionRecorder().stop();
+            throw e;
+        }
     }
 
     private AgentResponse expiredConfirmationResponse(String sessionId) {
@@ -289,7 +327,7 @@ public class AgentService {
     public void clearSession(String sessionId) {
         chatMemory.clear(sessionId);
         activeSessions.remove(sessionId);
-        pendingOrderUserActions.remove(sessionId);
+        invalidatePendingConfirmation(sessionId);
         log.info("Cleared session: {}", sessionId);
     }
 
