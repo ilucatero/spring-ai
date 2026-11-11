@@ -24,12 +24,10 @@ import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderUserActionConfirmation;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
-import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
+import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.repository.SystemPromptRepository;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
-import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
-import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor;
 import com.ilucatero.springai.chat_cs_adv.app.tool.CustomToolCallingAdvisor.OrderUserActionResult;
@@ -50,10 +48,7 @@ public class AgentService {
     private final OrderRepository orderRepository;
 
     // recorder must be renewed on each session call, no previous state reuse
-    private final ToolExecutionInfo.Recorder toolExecutionRecorder;
-    private final OrderDeliveranceTool orderDeliveranceTool;
-    private final OrderStatusTool orderStatusTool;
-    private final OrderCancelationTool orderCancelationTool;
+    private final OrderToolSet orderToolSet;
     private final McpToolRegistry mcpTools;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
@@ -66,27 +61,24 @@ public class AgentService {
      * IMPORTANT : never build a ToolCallingManager inline, otherwise the
      * parametered limits wont be used
      */
-    public AgentService(ToolCallingManager toolCallingManager,
+    public AgentService(
             ChatClient.Builder chatClientBuilder,
             ChatMemory chatMemory,
             OrderRepository orderRepository,
-            DeliveryAssessmentService deliveryAssessmentService,
-            McpToolRegistry mcpTools) {
+            ToolCallingManager toolCallingManager,
+            OrderToolSet orderToolSet,
+            McpToolRegistry mcpTools
+            ) {
 
-        this.toolCallingManager = toolCallingManager;
         this.chatClient = chatClientBuilder
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
                 .build();
         this.chatMemory = chatMemory;
         this.orderRepository = orderRepository;
 
+        this.toolCallingManager = toolCallingManager;
         this.mcpTools = mcpTools;
-
-        this.toolExecutionRecorder = new ToolExecutionInfo.Recorder();
-        this.orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
-                deliveryAssessmentService);
-        this.orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
-        this.orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
+        this.orderToolSet = orderToolSet;
 
         log.info("Agent service initialized with Spring AI ChatClient");
     }
@@ -119,7 +111,7 @@ public class AgentService {
         activeSessions.add(sessionId);
         pendingOrderUserActions.remove(sessionId);
 
-        toolExecutionRecorder.start();
+        orderToolSet.toolExecutionRecorder().start();
         var cancellationAdvisor = createCancellingToolCallingAdvisor(sessionId);
 
         try {
@@ -131,7 +123,7 @@ public class AgentService {
 
             // Call via ChatClient with tools — Spring AI handles tool execution loop
             var toolObjects = Stream.concat(
-                    Stream.of(orderDeliveranceTool, orderStatusTool, orderCancelationTool),
+                    Stream.of(orderToolSet.getTools()),
                     Arrays.stream(mcpTools.getToolCallbacks()))
                     .toArray();
 
@@ -147,7 +139,7 @@ public class AgentService {
 
             // Add AI response to memory
             chatMemory.add(sessionId, new AssistantMessage(answer));
-            var toolExecutions = toolExecutionRecorder.stop();
+            var toolExecutions = orderToolSet.toolExecutionRecorder().stop();
 
             log.info("Agent completed task successfully with {} tool execution(s)", toolExecutions.size());
 
@@ -159,7 +151,7 @@ public class AgentService {
                     cancellationAdvisor.pendingOrderUserAction());
 
         } catch (Exception e) {
-            var toolExecutions = toolExecutionRecorder.stop();
+            var toolExecutions = orderToolSet.toolExecutionRecorder().stop();
             log.error("Agent task execution failed", e);
             return new AgentResponse(
                     "I encountered an error: " + e.getMessage(),
@@ -243,12 +235,12 @@ public class AgentService {
                     AgentResponse.Status.CONFIRMATION_EXPIRED);
         }
 
-        toolExecutionRecorder.start();
+        orderToolSet.toolExecutionRecorder().start();
         try {
-            var status = orderStatusTool.getOrderStatus(pending.orderId());
+            var status = orderToolSet.orderStatusTool().getOrderStatus(pending.orderId());
             final String answer;
             if (CANCELLABLE_STATUS.contains(status)) {
-                var result = orderCancelationTool.cancelOrder(pending.orderId());
+                var result = orderToolSet.orderCancelationTool().cancelOrder(pending.orderId());
                 answer = "Result of canceling order %s: %s.".formatted(pending.orderId(), result);
             } else {
                 if (Order.Status.ORDER_NOT_FOUND.equals(status)) {
@@ -262,9 +254,9 @@ public class AgentService {
             chatMemory.add(sessionId,
                     new UserMessage("I confirm the cancellation of order %s.".formatted(pending.orderId())));
             chatMemory.add(sessionId, new AssistantMessage(answer));
-            return new AgentResponse(answer, sessionId, toolExecutionRecorder.stop(), AgentResponse.Status.COMPLETED);
+            return new AgentResponse(answer, sessionId, orderToolSet.toolExecutionRecorder().stop(), AgentResponse.Status.COMPLETED);
         } catch (RuntimeException e) {
-            toolExecutionRecorder.stop();
+            orderToolSet.toolExecutionRecorder().stop();
             throw e;
         }
     }

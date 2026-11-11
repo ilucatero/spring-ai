@@ -17,12 +17,16 @@ import org.springframework.ai.tool.ToolCallback;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
+import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.service.DeliveryAssessmentService.DeliveryAssessment;
 import com.ilucatero.springai.chat_cs_adv.app.support.FakeReturnPolicyTool;
 import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatModel;
 import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatResponses;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceOrchestrationTest {
@@ -32,6 +36,7 @@ class AgentServiceOrchestrationTest {
     McpToolRegistry mcpToolRegistry;
     DefaultToolCallingManager toolCallingManager;
     DeliveryAssessmentService deliveryAssessmentService;
+    OrderToolSet orderToolSet;
 
     @BeforeEach
     void setUp() {
@@ -42,6 +47,14 @@ class AgentServiceOrchestrationTest {
 
         mcpToolRegistry = mock(McpToolRegistry.class);
         when(mcpToolRegistry.getToolCallbacks()).thenReturn(new org.springframework.ai.tool.ToolCallback[0]);
+
+        var toolExecutionRecorder = new ToolExecutionInfo.Recorder();
+        var orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
+                deliveryAssessmentService);
+        var orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
+        var orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
+        orderToolSet = new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool,
+                orderCancelationTool);
     }
 
     @Test
@@ -190,11 +203,11 @@ class AgentServiceOrchestrationTest {
 
     private AgentService createAgentService(ChatModel model, McpToolRegistry mcpTools) {
         return new AgentService(
-                toolCallingManager,
                 ChatClient.builder(model),
                 chatMemory,
                 orderRepository,
-                deliveryAssessmentService,
+                toolCallingManager,
+                orderToolSet,
                 mcpTools);
     }
 

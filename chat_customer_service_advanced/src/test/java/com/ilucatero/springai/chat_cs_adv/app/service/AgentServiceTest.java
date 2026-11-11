@@ -27,7 +27,12 @@ import org.springframework.ai.tool.ToolCallback;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
+import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
+import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceTest {
@@ -37,6 +42,7 @@ class AgentServiceTest {
     private ChatClientRequestSpec chatClientRequest;
     private CallResponseSpec responseSpec;
     private ToolCallback mcpToolCallback;
+    private ToolExecutionInfo.Recorder toolExecutionRecorder;
 
     @BeforeEach
     void setUp() {
@@ -60,17 +66,25 @@ class AgentServiceTest {
         when(chatClientBuilder.build()).thenReturn(chatClient);
         when(orderRepository.get(anyString())).thenReturn(new Order("123", Order.Status.SHIPPED, null, null));
 
-
         var mcpToolRegistry = mock(McpToolRegistry.class);
         mcpToolCallback = mock(ToolCallback.class);
         when(mcpToolRegistry.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpToolCallback });
 
+        toolExecutionRecorder = new ToolExecutionInfo.Recorder();
+
+        var orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
+        var orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
+
+        var DeliveryAssessmentService = mock(DeliveryAssessmentService.class);
+        var orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
+                DeliveryAssessmentService);
+
         agentService = new AgentService(
-                toolCallingManager,
                 chatClientBuilder,
                 mock(ChatMemory.class),
                 orderRepository,
-                mock(DeliveryAssessmentService.class),
+                toolCallingManager,
+                new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool, orderCancelationTool),
                 mcpToolRegistry);
 
     }

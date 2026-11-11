@@ -13,7 +13,7 @@
       "name": "Spring AI : Customer Service",
       "request": "launch",
       "mainClass": "${workspaceFolder}/chat_customer_service/src/main/java/com/ilucatero/springai/chat_cs/app/Application.java",
-      "cwd": "${workspaceFolder}/chat_customer_service"
+      "cwd": "${workspaceFolder}/chat_customer_service",
     },
     {
       "type": "java",
@@ -28,6 +28,13 @@
       "request": "launch",
       "mainClass": "${workspaceFolder}/chat_customer_service_advanced_mcp/src/main/java/com/ilucatero/springai/chat_cs_adv_mcp/app/Application.java",
       "cwd": "${workspaceFolder}/chat_customer_service_advanced_mcp"
+    },
+    {
+      "type": "java",
+      "name": "Spring AI : Customer Service Advanced (Agentic Workflow)",
+      "request": "launch",
+      "mainClass": "${workspaceFolder}/chat_customer_service_advanced_workflow/src/main/java/com/ilucatero/springai/chat_cs_adv/app/Application.java",
+      "cwd": "${workspaceFolder}/chat_customer_service_advanced_workflow"
     },
   ]
 }
