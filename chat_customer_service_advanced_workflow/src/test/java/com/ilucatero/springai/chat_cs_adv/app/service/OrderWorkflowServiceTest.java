@@ -9,14 +9,18 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -29,12 +33,28 @@ class OrderWorkflowServiceTest {
 
     @Mock
     private OrderStatusTool orderStatusTool;
-
     @Mock
     private OrderDeliveranceTool orderDeliveranceTool;
+    @Mock
+    private OrderResponseService orderResponseService;
 
-    @InjectMocks
+    private final Executor workflowExecutor = Executors.newFixedThreadPool(2);
+
     private OrderWorkflowService orderWorkflowService;
+
+    @BeforeEach
+    void setUp() {
+        orderWorkflowService = new OrderWorkflowService(
+                orderStatusTool,
+                orderDeliveranceTool,
+                orderResponseService,
+                workflowExecutor);
+    }
+
+    @AfterEach
+    void tearDown() {
+        ((ExecutorService) workflowExecutor).shutdown();
+    }
 
     @ParameterizedTest(name = "{0}: delivery call expected = {1}")
     @MethodSource("orderStatusesAndDeliveryCalls")
@@ -42,11 +62,9 @@ class OrderWorkflowServiceTest {
         // Given
         var orderId = "123";
 
-        when(orderStatusTool.getOrderStatus(orderId))
-                .thenReturn(status);
+        when(orderStatusTool.getOrderStatus(orderId)).thenReturn(status);
         if (shouldCallDelivery) {
-            when(orderDeliveranceTool.getDeliveryDetails(orderId))
-                    .thenReturn("Delivery expected on 15/06/2024");
+            when(orderDeliveranceTool.getDeliveryDetails(orderId)).thenReturn("Delivery expected on 15/06/2024");
         }
 
         // When
