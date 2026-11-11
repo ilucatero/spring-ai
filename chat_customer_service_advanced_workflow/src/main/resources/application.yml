@@ -1,0 +1,51 @@
+server:
+  port: 8082
+
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: spring-ai-chat
+  ai:
+    openai:
+      base-url: ${OPENAI_ENDPOINT}
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        model: ${OPENAI_MODEL}
+    # true, otherwise error message taken as input messages
+    tools:
+      throw-exception-on-error: true
+      limits:
+        max-total-tool-calls: 3
+        on-limit-exceeded: THROW
+    mcp:
+      client:
+        type: SYNC
+        initialized: false # allows lazy initialization to let spring be ready but required also lazy discovery
+        toolcallback:
+          enabled: false
+        request-timeout: 30s
+        streamable-http:
+          connections:
+            order-mcp-server:
+              url: http://localhost:8092
+              endpoint: /mcp
+
+
+# Spring Boot Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Logging configuration
+logging:
+  level:
+    "[com.ilucatero.springai]": INFO
+    "[org.springframework.ai]": DEBUG
+
+# Values are read from environment variables (see .env)

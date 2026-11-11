@@ -7,23 +7,33 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import java.util.function.Consumer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClient.CallResponseSpec;
 import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.tool.ToolCallback;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
+import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
+import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
+import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
+import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceTest {
 
@@ -31,6 +41,8 @@ class AgentServiceTest {
 
     private ChatClientRequestSpec chatClientRequest;
     private CallResponseSpec responseSpec;
+    private ToolCallback mcpToolCallback;
+    private ToolExecutionInfo.Recorder toolExecutionRecorder;
 
     @BeforeEach
     void setUp() {
@@ -54,8 +66,47 @@ class AgentServiceTest {
         when(chatClientBuilder.build()).thenReturn(chatClient);
         when(orderRepository.get(anyString())).thenReturn(new Order("123", Order.Status.SHIPPED, null, null));
 
-        agentService = new AgentService(toolCallingManager, chatClientBuilder, mock(ChatMemory.class), orderRepository,
-                mock(DeliveryAssessmentService.class));
+        var mcpToolRegistry = mock(McpToolRegistry.class);
+        mcpToolCallback = mock(ToolCallback.class);
+        when(mcpToolRegistry.getToolCallbacks()).thenReturn(new ToolCallback[] { mcpToolCallback });
+
+        toolExecutionRecorder = new ToolExecutionInfo.Recorder();
+
+        var orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
+        var orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
+
+        var DeliveryAssessmentService = mock(DeliveryAssessmentService.class);
+        var orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
+                DeliveryAssessmentService);
+
+        agentService = new AgentService(
+                chatClientBuilder,
+                mock(ChatMemory.class),
+                orderRepository,
+                toolCallingManager,
+                new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool, orderCancelationTool),
+                mcpToolRegistry);
+
+    }
+
+    @Test
+    void shouldRegisterMcpToolCallbackProvider() {
+        // Given
+        var request = new AgentRequest(
+                "Quelle est la politique de retour des produits électroniques ?",
+                "session-mcp");
+
+        when(responseSpec.content()).thenReturn("Retour possible sous 30 jours.");
+
+        // When
+        agentService.executeTask(request);
+
+        // Then
+        System.out.println("MockingDetails:" + Mockito.mockingDetails(chatClientRequest).getInvocations());
+
+        var captor = ArgumentCaptor.forClass(Object[].class);
+        verify(chatClientRequest).tools(captor.capture());
+        assertThat(captor.getValue()).contains(mcpToolCallback);
     }
 
     @Test
