@@ -22,8 +22,8 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
+import com.ilucatero.springai.chat_cs_adv.app.model.CancellationWorkflowContext;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderUserActionConfirmation;
-import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.repository.SystemPromptRepository;
@@ -37,9 +37,6 @@ public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
 
-    private static final List<Order.Status> CANCELLABLE_STATUS = List.of(
-            Order.Status.PROCESSING, Order.Status.READY_TO_SHIP, Order.Status.SHIPPING, Order.Status.SHIPPED);
-
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ChatClient chatClient;
@@ -50,6 +47,8 @@ public class AgentService {
     // recorder must be renewed on each session call, no previous state reuse
     private final OrderToolSet orderToolSet;
     private final McpToolRegistry mcpTools;
+
+    private final OrderCancellationWorkflowService cancellationWorkflowService;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
     private final Map<String, OrderUserActionConfirmation> pendingOrderUserActions = new ConcurrentHashMap<>();
@@ -67,8 +66,8 @@ public class AgentService {
             OrderRepository orderRepository,
             ToolCallingManager toolCallingManager,
             OrderToolSet orderToolSet,
-            McpToolRegistry mcpTools
-            ) {
+            McpToolRegistry mcpTools,
+            OrderCancellationWorkflowService cancellationWorkflowService) {
 
         this.chatClient = chatClientBuilder
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
@@ -79,6 +78,8 @@ public class AgentService {
         this.toolCallingManager = toolCallingManager;
         this.mcpTools = mcpTools;
         this.orderToolSet = orderToolSet;
+
+        this.cancellationWorkflowService = cancellationWorkflowService;
 
         log.info("Agent service initialized with Spring AI ChatClient");
     }
@@ -187,74 +188,70 @@ public class AgentService {
                     null);
         }
 
-        // get Order from DB
-        var order = orderRepository.get(orderId);
-
-        // extract status
-        var status = order.status;
-        if (!CANCELLABLE_STATUS.contains(status)) {
-            return switch (status) {
-                case ORDER_NOT_FOUND -> new CustomToolCallingAdvisor.OrderUserActionResult(
-                        "I couldn't find the order %s. Please verify the order number before requesting cancellation."
-                                .formatted(orderId),
-                        null);
-                default -> new CustomToolCallingAdvisor.OrderUserActionResult(
-                        "The order %s with status %s cannot be cancelled. No cancellation has been prepared."
-                                .formatted(orderId, status),
-                        null);
-            };
+        // Start the cancellation workflow
+        CancellationWorkflowContext context;
+        try {
+            context = cancellationWorkflowService.startCancellation(orderId);
+        } catch (IllegalStateException e) {
+            return new CustomToolCallingAdvisor.OrderUserActionResult(e.getMessage(), null);
         }
 
-        // extract details
-        var details = order.deliveryDetails;
-        if (details == null) {
-            details = "No additional delivery details are available.";
+        // Retrieve details for the confirmation displayed to the user
+        var details = "[No additional delivery details are available for this order.]";
+        try {
+            details = orderRepository.get(context.orderId()).deliveryDetails;
+        } catch (RuntimeException e) {
+            log.warn("Unable to retrieve delivery details for order {}", context.orderId(), e);
         }
 
-        // create confirmation user action
-        var confirmation = new OrderUserActionConfirmation(UUID.randomUUID().toString(), orderId, status.name(),
+        // Create confirmation linked to the workflow
+        var confirmation = new OrderUserActionConfirmation(
+                UUID.randomUUID().toString(),
+                context.workflowId(),
+                context.orderId(),
+                context.orderStatus().name(),
                 details);
+
         pendingOrderUserActions.put(sessionId, confirmation);
 
-        // returns user action result
         return new CustomToolCallingAdvisor.OrderUserActionResult(
-                "The order %s is not delivered. Please verify the details below, then choose \"Confirm Cancellation\" if you wish to proceed."
+                "The order %s is eligible for cancellation. Please confirm before proceeding."
                         .formatted(orderId),
                 confirmation);
     }
 
-    public AgentResponse confirmCancellation(String sessionId, String confirmationId) {
+    public AgentResponse confirmCancellation(
+            String sessionId,
+            String confirmationId) {
+
         var pending = pendingOrderUserActions.get(sessionId);
-        if (pending == null
-                || !pending.confirmationId().equals(confirmationId)
-                || !pendingOrderUserActions.remove(sessionId, pending)) {
-            return new AgentResponse(
-                    "This confirmation request has expired. Please submit your cancellation request again.",
-                    sessionId,
-                    List.of(),
-                    AgentResponse.Status.CONFIRMATION_EXPIRED);
+        if (pending == null || !pending.confirmationId().equals(confirmationId)) {
+            return expiredConfirmationResponse(sessionId);
+        }
+
+        // Consume confirmation
+        if (!pendingOrderUserActions.remove(sessionId, pending)) {
+            return expiredConfirmationResponse(sessionId);
         }
 
         orderToolSet.toolExecutionRecorder().start();
+
         try {
-            var status = orderToolSet.orderStatusTool().getOrderStatus(pending.orderId());
-            final String answer;
-            if (CANCELLABLE_STATUS.contains(status)) {
-                var result = orderToolSet.orderCancelationTool().cancelOrder(pending.orderId());
-                answer = "Result of canceling order %s: %s.".formatted(pending.orderId(), result);
-            } else {
-                if (Order.Status.ORDER_NOT_FOUND.equals(status)) {
-                    answer = "I couldn't find the order %s. No cancellation has been made."
-                            .formatted(pending.orderId());
-                } else {
-                    answer = "The order %s is now marked with status %s. No cancellation can been made."
-                            .formatted(pending.orderId(), status);
-                }
-            }
+            var context = cancellationWorkflowService.confirmCancellation(pending.workflowId(), true);
+
+            var answer = "Result of cancelling order %s: %s."
+                    .formatted(context.orderId(), context.workflowStatus());
+
             chatMemory.add(sessionId,
                     new UserMessage("I confirm the cancellation of order %s.".formatted(pending.orderId())));
             chatMemory.add(sessionId, new AssistantMessage(answer));
-            return new AgentResponse(answer, sessionId, orderToolSet.toolExecutionRecorder().stop(), AgentResponse.Status.COMPLETED);
+
+            return new AgentResponse(
+                    answer,
+                    sessionId,
+                    orderToolSet.toolExecutionRecorder().stop(),
+                    AgentResponse.Status.COMPLETED);
+
         } catch (RuntimeException e) {
             orderToolSet.toolExecutionRecorder().stop();
             throw e;
@@ -266,17 +263,23 @@ public class AgentService {
         if (pending == null
                 || !pending.confirmationId().equals(confirmationId)
                 || !pendingOrderUserActions.remove(sessionId, pending)) {
-            return new AgentResponse(
-                    "This confirmation request has expired. Please submit your cancellation request again.",
-                    sessionId,
-                    List.of(),
-                    AgentResponse.Status.CONFIRMATION_EXPIRED);
+            return expiredConfirmationResponse(sessionId);
         }
 
-        var answer = "The cancellation of order %s has been declined.".formatted(pending.orderId());
-        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order %s.".formatted(pending.orderId())));
+        var context = cancellationWorkflowService.confirmCancellation(pending.workflowId(), false);
+
+        var answer = "The cancellation of order %s has been declined.".formatted(context.orderId());
+        chatMemory.add(sessionId, new UserMessage("I do not wish to cancel order %s.".formatted(context.orderId())));
         chatMemory.add(sessionId, new AssistantMessage(answer));
         return new AgentResponse(answer, sessionId, List.of(), AgentResponse.Status.COMPLETED);
+    }
+
+    private AgentResponse expiredConfirmationResponse(String sessionId) {
+        return new AgentResponse(
+                "This confirmation request has expired. Please submit your cancellation request again.",
+                sessionId,
+                List.of(),
+                AgentResponse.Status.CONFIRMATION_EXPIRED);
     }
 
     /**

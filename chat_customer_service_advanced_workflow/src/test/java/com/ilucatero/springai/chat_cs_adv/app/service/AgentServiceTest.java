@@ -79,13 +79,16 @@ class AgentServiceTest {
         var orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
                 DeliveryAssessmentService);
 
+        var cancellationWorkflowService = mock(OrderCancellationWorkflowService.class);
+
         agentService = new AgentService(
                 chatClientBuilder,
                 mock(ChatMemory.class),
                 orderRepository,
                 toolCallingManager,
                 new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool, orderCancelationTool),
-                mcpToolRegistry);
+                mcpToolRegistry,
+                cancellationWorkflowService);
 
     }
 

@@ -37,6 +37,7 @@ class AgentServiceOrchestrationTest {
     DefaultToolCallingManager toolCallingManager;
     DeliveryAssessmentService deliveryAssessmentService;
     OrderToolSet orderToolSet;
+    OrderCancellationWorkflowService cancellationWorkflowService;
 
     @BeforeEach
     void setUp() {
@@ -55,6 +56,8 @@ class AgentServiceOrchestrationTest {
         var orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
         orderToolSet = new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool,
                 orderCancelationTool);
+
+        cancellationWorkflowService = mock(OrderCancellationWorkflowService.class);
     }
 
     @Test
@@ -208,7 +211,8 @@ class AgentServiceOrchestrationTest {
                 orderRepository,
                 toolCallingManager,
                 orderToolSet,
-                mcpTools);
+                mcpTools,
+                cancellationWorkflowService);
     }
 
 }
