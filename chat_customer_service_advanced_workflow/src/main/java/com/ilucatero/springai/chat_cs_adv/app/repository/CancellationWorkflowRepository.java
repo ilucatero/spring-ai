@@ -37,4 +37,7 @@ public interface CancellationWorkflowRepository extends JpaRepository<Cancellati
             @Param("expectedStatus") WorkflowStatus expectedStatus,
             @Param("newStatus") WorkflowStatus newStatus,
             @Param("updatedAt") LocalDateTime updatedAt);
+
+    List<CancellationWorkflowEntity> findAllByWorkflowStatus(WorkflowStatus workflowStatus);
+
 }
