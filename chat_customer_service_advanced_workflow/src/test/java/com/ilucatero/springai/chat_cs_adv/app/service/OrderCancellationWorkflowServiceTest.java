@@ -2,11 +2,9 @@ package com.ilucatero.springai.chat_cs_adv.app.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
+
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -37,68 +35,104 @@ class OrderCancellationWorkflowServiceTest {
     private OrderCancelationTool orderCancelationTool;
     @Mock
     private CancellationWorkflowRepository workflowRepository;
+    @Mock
+    private CancellationWorkflowStateService stateService;
 
     private OrderCancellationWorkflowService workflowService;
 
     @BeforeEach
     void setUp() {
-        workflowService = new OrderCancellationWorkflowService(orderStatusTool, orderCancelationTool,
+        workflowService = new OrderCancellationWorkflowService(
+                orderStatusTool,
+                orderCancelationTool,
+                stateService,
                 workflowRepository);
     }
 
     @Test
     void shouldCompleteWorkflowWhenProcessingOrderCancellationIsConfirmed() {
         // Given
-        var context = newContext(ORDER_ID, Order.Status.PROCESSING, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        var context = newContext(
+                ORDER_ID,
+                Order.Status.PROCESSING,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
+        var initialEntity = newEntity(context, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        var completedEntity = newEntity(context, WorkflowStatus.COMPLETED);
+
         when(workflowRepository.findById(context.workflowId()))
-                .thenReturn(Optional.of(new CancellationWorkflowEntity(
-                        context.workflowId(),
-                        SESSION_ID,
-                        context.confirmationId(),
-                        context.orderId(),
-                        context.orderStatus(),
-                        context.workflowStatus())));
-        when(orderStatusTool.getOrderStatus(context.orderId())).thenReturn(context.orderStatus());
+                .thenReturn(Optional.of(initialEntity), Optional.of(completedEntity));
+
+        when(stateService.transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING))
+                .thenReturn(true);
+
+        when(orderStatusTool.getOrderStatus(context.orderId()))
+                .thenReturn(Order.Status.PROCESSING);
 
         // When
         var result = workflowService.confirmCancellation(context.workflowId(), true);
 
         // Then
         assertEquals(WorkflowStatus.COMPLETED, result.workflowStatus());
-        verify(workflowRepository).findById(context.workflowId());
+
+        verify(stateService).transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING);
+
         verify(orderStatusTool).getOrderStatus(context.orderId());
         verify(orderCancelationTool).cancelOrder(context.orderId());
-        verify(workflowRepository).save(any(CancellationWorkflowEntity.class));
-        verifyNoMoreInteractions(workflowRepository, orderStatusTool, orderCancelationTool);
+
+        verify(stateService).updateFinalStatus(
+                context.workflowId(),
+                WorkflowStatus.COMPLETED);
     }
 
     @Test
     void shouldCancelWorkflowWhenCancellationIsRejected() {
         // Given
-        var context = newContext(ORDER_ID, Order.Status.PROCESSING, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        var context = newContext(
+                ORDER_ID,
+                Order.Status.PROCESSING,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
+        var initialEntity = newEntity(context, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        var cancelledEntity = newEntity(context, WorkflowStatus.CANCELLED);
+
         when(workflowRepository.findById(context.workflowId()))
-                .thenReturn(Optional.of(new CancellationWorkflowEntity(
-                        context.workflowId(),
-                        SESSION_ID,
-                        context.confirmationId(),
-                        context.orderId(),
-                        context.orderStatus(),
-                        context.workflowStatus())));
+                .thenReturn(Optional.of(initialEntity), Optional.of(cancelledEntity));
+
+        when(stateService.transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLED))
+                .thenReturn(true);
 
         // When
         var result = workflowService.confirmCancellation(context.workflowId(), false);
+
         // Then
         assertEquals(WorkflowStatus.CANCELLED, result.workflowStatus());
-        verify(workflowRepository).save(any(CancellationWorkflowEntity.class));
-        verifyNoMoreInteractions(workflowRepository);
+
+        verify(stateService).transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLED);
+
         verifyNoInteractions(orderStatusTool, orderCancelationTool);
     }
 
     @Test
     void shouldRejectStartingWorkflowWhenOrderIsNotCancellable() {
-        when(orderStatusTool.getOrderStatus(ORDER_ID)).thenReturn(Order.Status.DELIVERED);
+        when(orderStatusTool.getOrderStatus(ORDER_ID))
+                .thenReturn(Order.Status.DELIVERED);
 
-        assertThrows(IllegalStateException.class, () -> workflowService.startCancellation(ORDER_ID, SESSION_ID));
+        assertThrows(
+                IllegalStateException.class,
+                () -> workflowService.startCancellation(ORDER_ID, SESSION_ID));
 
         verify(orderStatusTool).getOrderStatus(ORDER_ID);
         verifyNoInteractions(orderCancelationTool);
@@ -107,16 +141,24 @@ class OrderCancellationWorkflowServiceTest {
     @Test
     void shouldFailWorkflowWhenOrderBecomesNotCancellableBeforeConfirmation() {
         // Given
-        var context = newContext(ORDER_ID, Order.Status.DELIVERED, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        var context = newContext(
+                ORDER_ID,
+                Order.Status.DELIVERED,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
+        var initialEntity = newEntity(context, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
         when(workflowRepository.findById(context.workflowId()))
-                .thenReturn(Optional.of(new CancellationWorkflowEntity(
-                        context.workflowId(),
-                        SESSION_ID,
-                        context.confirmationId(),
-                        context.orderId(),
-                        context.orderStatus(),
-                        context.workflowStatus())));
-        when(orderStatusTool.getOrderStatus(context.orderId())).thenReturn(context.orderStatus());
+                .thenReturn(Optional.of(initialEntity));
+
+        when(stateService.transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING))
+                .thenReturn(true);
+
+        when(orderStatusTool.getOrderStatus(context.orderId()))
+                .thenReturn(Order.Status.DELIVERED);
 
         // When
         assertThrows(
@@ -124,10 +166,17 @@ class OrderCancellationWorkflowServiceTest {
                 () -> workflowService.confirmCancellation(context.workflowId(), true));
 
         // Then
-        verify(workflowRepository).findById(context.workflowId());
-        verify(orderStatusTool, times(1)).getOrderStatus(context.orderId());
-        verify(workflowRepository).save(any(CancellationWorkflowEntity.class));
-        verifyNoMoreInteractions(workflowRepository, orderStatusTool);
+        verify(stateService).transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING);
+
+        verify(orderStatusTool).getOrderStatus(context.orderId());
+
+        verify(stateService).updateFinalStatus(
+                context.workflowId(),
+                WorkflowStatus.FAILED);
+
         verifyNoInteractions(orderCancelationTool);
     }
 
@@ -137,21 +186,22 @@ class OrderCancellationWorkflowServiceTest {
                 IllegalArgumentException.class,
                 () -> workflowService.confirmCancellation("missing-workflow", true));
 
-        verifyNoInteractions(orderStatusTool, orderCancelationTool);
+        verifyNoInteractions(
+                orderStatusTool,
+                orderCancelationTool,
+                stateService);
     }
 
     @Test
     void shouldThrowWhenWorkflowWasAlreadyCompleted() {
         // Given
-        var context = newContext(ORDER_ID, Order.Status.PROCESSING, WorkflowStatus.COMPLETED);
+        var context = newContext(
+                ORDER_ID,
+                Order.Status.PROCESSING,
+                WorkflowStatus.COMPLETED);
+
         when(workflowRepository.findById(context.workflowId()))
-                .thenReturn(Optional.of(new CancellationWorkflowEntity(
-                        context.workflowId(),
-                        SESSION_ID,
-                        context.confirmationId(),
-                        context.orderId(),
-                        context.orderStatus(),
-                        context.workflowStatus())));
+                .thenReturn(Optional.of(newEntity(context, WorkflowStatus.COMPLETED)));
 
         // When
         assertThrows(
@@ -160,23 +210,35 @@ class OrderCancellationWorkflowServiceTest {
 
         // Then
         verify(workflowRepository).findById(context.workflowId());
-        verifyNoMoreInteractions(workflowRepository);
-        verifyNoInteractions(orderStatusTool, orderCancelationTool);
+
+        verifyNoInteractions(
+                orderStatusTool,
+                orderCancelationTool,
+                stateService);
     }
 
     @Test
     void shouldFailWorkflowWhenOrderCancellationThrows() {
         // Given
-        var context = newContext(ORDER_ID, Order.Status.PROCESSING, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        var context = newContext(
+                ORDER_ID,
+                Order.Status.PROCESSING,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
+        var initialEntity = newEntity(context, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
         when(workflowRepository.findById(context.workflowId()))
-                .thenReturn(Optional.of(new CancellationWorkflowEntity(
-                        context.workflowId(),
-                        SESSION_ID,
-                        context.confirmationId(),
-                        context.orderId(),
-                        context.orderStatus(),
-                        context.workflowStatus())));
-        when(orderStatusTool.getOrderStatus(context.orderId())).thenReturn(Order.Status.PROCESSING);
+                .thenReturn(Optional.of(initialEntity));
+
+        when(stateService.transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING))
+                .thenReturn(true);
+
+        when(orderStatusTool.getOrderStatus(context.orderId()))
+                .thenReturn(Order.Status.PROCESSING);
+
         when(orderCancelationTool.cancelOrder(context.orderId()))
                 .thenThrow(new RuntimeException("Cancellation failed"));
 
@@ -186,15 +248,68 @@ class OrderCancellationWorkflowServiceTest {
                 () -> workflowService.confirmCancellation(context.workflowId(), true));
 
         // Then
-        verify(workflowRepository).findById(context.workflowId());
+        verify(stateService).transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING);
+
         verify(orderStatusTool).getOrderStatus(context.orderId());
         verify(orderCancelationTool).cancelOrder(context.orderId());
-        verify(workflowRepository).save(any(CancellationWorkflowEntity.class));
-        verifyNoMoreInteractions(workflowRepository, orderStatusTool, orderCancelationTool);
+
+        verify(stateService).updateFinalStatus(
+                context.workflowId(),
+                WorkflowStatus.FAILED);
     }
 
-    private CancellationWorkflowContext newContext(String orderId, Order.Status orderStatus,
+    @Test
+    void shouldRejectConcurrentConfirmationWhenWorkflowIsAlreadyClaimed() {
+        // Given
+        var context = newContext(
+                ORDER_ID,
+                Order.Status.PROCESSING,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
+        when(workflowRepository.findById(context.workflowId()))
+                .thenReturn(Optional.of(newEntity(context, WorkflowStatus.WAITING_FOR_CONFIRMATION)));
+
+        when(stateService.transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING))
+                .thenReturn(false);
+
+        // When
+        assertThrows(
+                IllegalStateException.class,
+                () -> workflowService.confirmCancellation(context.workflowId(), true));
+
+        // Then
+        verify(stateService).transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING);
+
+        verifyNoInteractions(orderStatusTool, orderCancelationTool);
+    }
+
+    private CancellationWorkflowEntity newEntity(
+            CancellationWorkflowContext context,
             WorkflowStatus workflowStatus) {
+
+        return new CancellationWorkflowEntity(
+                context.workflowId(),
+                SESSION_ID,
+                context.confirmationId(),
+                context.orderId(),
+                context.orderStatus(),
+                workflowStatus);
+    }
+
+    private CancellationWorkflowContext newContext(
+            String orderId,
+            Order.Status orderStatus,
+            WorkflowStatus workflowStatus) {
+
         return new CancellationWorkflowContext(
                 "workflow-1",
                 orderId,

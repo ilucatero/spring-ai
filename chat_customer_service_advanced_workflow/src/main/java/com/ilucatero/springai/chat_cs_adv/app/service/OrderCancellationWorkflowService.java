@@ -1,5 +1,6 @@
 package com.ilucatero.springai.chat_cs_adv.app.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,14 +28,17 @@ public class OrderCancellationWorkflowService {
 
     private final OrderStatusTool orderStatusTool;
     private final OrderCancelationTool orderCancelationTool;
+    private final CancellationWorkflowStateService stateService;
     private final CancellationWorkflowRepository workflowRepository;
 
     public OrderCancellationWorkflowService(
             OrderStatusTool orderStatusTool,
             OrderCancelationTool orderCancelationTool,
+            CancellationWorkflowStateService stateService,
             CancellationWorkflowRepository workflowRepository) {
         this.orderStatusTool = orderStatusTool;
         this.orderCancelationTool = orderCancelationTool;
+        this.stateService = stateService;
         this.workflowRepository = workflowRepository;
     }
 
@@ -98,7 +102,6 @@ public class OrderCancellationWorkflowService {
     /**
      * Step 2: Resume workflow after human confirmation.
      */
-    @Transactional
     public CancellationWorkflowContext confirmCancellation(String workflowId, boolean confirmed) {
 
         var entity = workflowRepository.findById(workflowId)
@@ -110,35 +113,50 @@ public class OrderCancellationWorkflowService {
 
         // User rejected cancellation
         if (!confirmed) {
-            entity.setWorkflowStatus(WorkflowStatus.CANCELLED);
-            workflowRepository.save(entity);
-            return toContext(entity);
+            boolean transitioned = stateService.transition(
+                    workflowId,
+                    WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                    WorkflowStatus.CANCELLED);
+            if (!transitioned) {
+                throw new IllegalStateException("Workflow is already being processed");
+            }
+
+            return toContext(workflowRepository.findById(workflowId).orElseThrow());
         }
 
-        // User confirmed cancellation
+        // 1. Atomically claim the workflow
+        boolean claimed = stateService.transition(
+                workflowId,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING);
+        if (!claimed) {
+            throw new IllegalStateException("Workflow is already being processed");
+        }
 
-        // Re-check order status before cancellation
-        var currentStatus = orderStatusTool.getOrderStatus(entity.getOrderId());
-        if (!CANCELLABLE_STATUS.contains(currentStatus)) {
-            entity.setWorkflowStatus(WorkflowStatus.FAILED);
-            workflowRepository.save(entity);
-            throw new IllegalStateException("Order can no longer be cancelled. Current status: " + currentStatus);
+        // 2. Re-check order status
+        var orderStatus = orderStatusTool.getOrderStatus(entity.getOrderId());
+        if (!CANCELLABLE_STATUS.contains(orderStatus)) {
+            stateService.updateFinalStatus(workflowId, WorkflowStatus.FAILED);
+
+            throw new IllegalStateException("Order cannot be cancelled. Current status: " + orderStatus);
         }
 
         try {
-            // Proceed with cancellation
+            // 3. Execute cancellation
             orderCancelationTool.cancelOrder(entity.getOrderId());
 
-            entity.setWorkflowStatus(WorkflowStatus.COMPLETED);
-            workflowRepository.save(entity);
+            // 4. Persist success
+            stateService.updateFinalStatus(workflowId, WorkflowStatus.COMPLETED);
 
         } catch (RuntimeException e) {
-            entity.setWorkflowStatus(WorkflowStatus.FAILED);
-            workflowRepository.save(entity);
-            throw new IllegalStateException("Unable to cancel order: " + entity.getOrderId(), e);
+
+            // Persist failure in a separate transaction
+            stateService.updateFinalStatus(workflowId, WorkflowStatus.FAILED);
+
+            throw new IllegalStateException("Cancellation failed for order: " + entity.getOrderId(), e);
         }
 
-        return toContext(entity);
+        return toContext(workflowRepository.findById(workflowId).orElseThrow());
     }
 
     @Transactional
