@@ -32,7 +32,6 @@ import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
 import com.ilucatero.springai.chat_cs_adv.app.model.UserIntent;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
-import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
@@ -84,6 +83,8 @@ class AgentServiceTest {
         when(intentService.detectIntent(anyString(), anyList())).thenReturn(new UserIntent(IntentType.GENERAL_QUESTION, null, null));
 
         var cancellationWorkflowService = mock(OrderCancellationWorkflowService.class);
+        when(cancellationWorkflowService.getConfirmation(anyString(), anyString()))
+                .thenThrow(new IllegalArgumentException("Invalid confirmation"));
 
         agentService = new AgentService(
                 chatClientBuilder,

@@ -39,15 +39,14 @@ public class OrderRepository {
     }
 
     public Order.Status cancel(String orderId) {
-        // Simulate order cancellation logic
-        if (ORDER_MAP.stream()
-                .anyMatch(order -> order.orderId.equals(orderId) && !Order.Status.CANCELLED.equals(order.status))) {
-            // In a real implementation, you would update the order status in the database
-            return Order.Status.CANCELLED; // Indicate that the order was successfully cancelled
-        }
-
         var order = get(orderId);
-        order.status = Order.Status.CANCELLED;
+
+        // Simulate order cancellation logic
+        // In a real implementation, you would update the order status in the database
+        if (!Order.Status.CANCELLED.equals(order.status)) {
+            order.status = Order.Status.CANCELLED;
+            return order.status;
+        }
 
         return order.status;
     }

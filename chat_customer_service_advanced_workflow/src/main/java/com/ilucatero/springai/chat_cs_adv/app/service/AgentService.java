@@ -2,7 +2,6 @@ package com.ilucatero.springai.chat_cs_adv.app.service;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -45,7 +44,6 @@ public class AgentService {
     private final OrderCancellationWorkflowService cancellationWorkflowService;
 
     private final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
-    private final Map<String, OrderUserActionConfirmation> pendingOrderUserActions = new ConcurrentHashMap<>();
 
     /**
      * Constructor with auto-wired ChatClient.Builder.
@@ -127,14 +125,10 @@ public class AgentService {
     }
 
     private void invalidatePendingConfirmation(String sessionId) {
-        var pending = pendingOrderUserActions.remove(sessionId);
-
-        if (pending != null) {
-            try {
-                cancellationWorkflowService.confirmCancellation(pending.workflowId(), false);
-            } catch (RuntimeException e) {
-                log.warn("Unable to invalidate workflow {}", pending.workflowId(), e);
-            }
+        try {
+            cancellationWorkflowService.cancelPendingWorkflow(sessionId);
+        } catch (RuntimeException e) {
+            log.warn("Unable to invalidate pending workflows for session {}", sessionId, e);
         }
     }
 
@@ -159,15 +153,14 @@ public class AgentService {
             // occurs
             var order = orderRepository.get(intent.orderId());
 
-            var context = cancellationWorkflowService.startCancellation(intent.orderId());
+            var context = cancellationWorkflowService.startCancellation(intent.orderId(), sessionId);
 
             var confirmation = new OrderUserActionConfirmation(
-                    UUID.randomUUID().toString(),
+                    context.confirmationId(),
                     context.workflowId(),
                     context.orderId(),
                     context.orderStatus().name(),
                     order.deliveryDetails);
-            pendingOrderUserActions.put(sessionId, confirmation);
 
             var message = "The order %s is eligible for cancellation. Please confirm before proceeding."
                     .formatted(context.orderId());
@@ -249,13 +242,17 @@ public class AgentService {
 
     public AgentResponse confirmCancellation(String sessionId, String confirmationId) {
 
-        var pending = pendingOrderUserActions.get(sessionId);
-        if (pending == null || !pending.confirmationId().equals(confirmationId)) {
-            return expiredConfirmationResponse(sessionId);
-        }
-
-        // Consume confirmation
-        if (!pendingOrderUserActions.remove(sessionId, pending)) {
+        OrderUserActionConfirmation pending;
+        try {
+            var cancelation = cancellationWorkflowService.getConfirmation(sessionId, confirmationId);
+            var order = orderRepository.get(cancelation.orderId());
+            pending = new OrderUserActionConfirmation(
+                    confirmationId,
+                    cancelation.workflowId(),
+                    cancelation.orderId(),
+                    cancelation.orderStatus().name(),
+                    order.deliveryDetails);
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return expiredConfirmationResponse(sessionId);
         }
 
@@ -284,10 +281,18 @@ public class AgentService {
     }
 
     public AgentResponse declineCancellation(String sessionId, String confirmationId) {
-        var pending = pendingOrderUserActions.get(sessionId);
-        if (pending == null
-                || !pending.confirmationId().equals(confirmationId)
-                || !pendingOrderUserActions.remove(sessionId, pending)) {
+
+        OrderUserActionConfirmation pending;
+        try {
+            var cancelation = cancellationWorkflowService.getConfirmation(sessionId, confirmationId);
+            var order = orderRepository.get(cancelation.orderId());
+            pending = new OrderUserActionConfirmation(
+                    confirmationId,
+                    cancelation.workflowId(),
+                    cancelation.orderId(),
+                    cancelation.orderStatus().name(),
+                    order.deliveryDetails);
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return expiredConfirmationResponse(sessionId);
         }
 

@@ -6,17 +6,20 @@ public class CancellationWorkflowContext {
     private final String orderId;
     private final Order.Status orderStatus;
     private WorkflowStatus workflowStatus;
+    private String confirmationId;
 
     public CancellationWorkflowContext(
             String workflowId,
             String orderId,
             Order.Status orderStatus,
-            WorkflowStatus workflowStatus) {
+            WorkflowStatus workflowStatus,
+            String confirmationId) {
 
         this.workflowId = workflowId;
         this.orderId = orderId;
         this.orderStatus = orderStatus;
         this.workflowStatus = workflowStatus;
+        this.confirmationId = confirmationId;
     }
 
     public String workflowId() {
@@ -37,5 +40,9 @@ public class CancellationWorkflowContext {
 
     public void setWorkflowStatus(WorkflowStatus workflowStatus) {
         this.workflowStatus = workflowStatus;
+    }
+
+    public String confirmationId() {
+        return confirmationId;
     }
 }

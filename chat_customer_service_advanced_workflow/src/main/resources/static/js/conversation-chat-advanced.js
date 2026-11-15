@@ -166,8 +166,7 @@ function addCancellationConfirmation(messageDiv, pendingCancellation) {
   confirmation.className = 'cancellation-confirmation';
 
   const details = document.createElement('p');
-  details.textContent = `Commande ${pendingCancellation.orderId} — statut : ${pendingCancellation.status}. `
-    + pendingCancellation.details;
+  details.textContent = `Commande ${pendingCancellation.orderId} — statut : ${pendingCancellation.orderStatus}. Delivery details: ${pendingCancellation.deliveryDetails}`;
 
   const actions = document.createElement('div');
   actions.className = 'cancellation-actions';

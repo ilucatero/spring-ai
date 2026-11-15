@@ -1,40 +1,72 @@
 package com.ilucatero.springai.chat_cs_adv.app.service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.ilucatero.springai.chat_cs_adv.app.model.CancellationWorkflowContext;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.model.WorkflowStatus;
+import com.ilucatero.springai.chat_cs_adv.app.repository.CancellationWorkflowRepository;
+import com.ilucatero.springai.chat_cs_adv.app.repository.entity.CancellationWorkflowEntity;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 
+import jakarta.transaction.Transactional;
+
 @Service
 public class OrderCancellationWorkflowService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderCancellationWorkflowService.class);
 
     private static final List<Order.Status> CANCELLABLE_STATUS = List.of(
             Order.Status.PROCESSING, Order.Status.READY_TO_SHIP, Order.Status.SHIPPING, Order.Status.SHIPPED);
 
     private final OrderStatusTool orderStatusTool;
     private final OrderCancelationTool orderCancelationTool;
-
-    private final Map<String, CancellationWorkflowContext> workflows = new ConcurrentHashMap<>();
+    private final CancellationWorkflowRepository workflowRepository;
 
     public OrderCancellationWorkflowService(
             OrderStatusTool orderStatusTool,
-            OrderCancelationTool orderCancelationTool) {
+            OrderCancelationTool orderCancelationTool,
+            CancellationWorkflowRepository workflowRepository) {
         this.orderStatusTool = orderStatusTool;
         this.orderCancelationTool = orderCancelationTool;
+        this.workflowRepository = workflowRepository;
+    }
+
+    @Transactional
+    public CancellationWorkflowContext getConfirmation(String sessionId, String confirmationId) {
+
+        log.info("Looking for confirmation: sessionId={}, confirmationId={}",
+                sessionId, confirmationId);
+
+        var entity = workflowRepository
+                .findBySessionIdAndConfirmationId(sessionId, confirmationId)
+                .orElseThrow(() -> {
+                    log.warn("No workflow found for confirmationId={} and sessionId={}",
+                            confirmationId, sessionId);
+                    return new IllegalArgumentException("Confirmation not found");
+                });
+
+        log.info("Workflow found: workflowId={}, status={}",
+                entity.getWorkflowId(), entity.getWorkflowStatus());
+
+        if (entity.getWorkflowStatus() != WorkflowStatus.WAITING_FOR_CONFIRMATION) {
+            throw new IllegalStateException("Confirmation is no longer valid");
+        }
+
+        return toContext(entity);
     }
 
     /**
      * Step 1: Start cancellation workflow.
      */
-    public CancellationWorkflowContext startCancellation(String orderId) {
+    @Transactional
+    public CancellationWorkflowContext startCancellation(String orderId, String sessionId) {
 
         // Check order status
         var orderStatus = orderStatusTool.getOrderStatus(orderId);
@@ -46,57 +78,87 @@ public class OrderCancellationWorkflowService {
 
         // Create workflow context
         var workflowId = UUID.randomUUID().toString();
+        var confirmationId = UUID.randomUUID().toString();
 
-        var context = new CancellationWorkflowContext(
+        var entity = new CancellationWorkflowEntity(
                 workflowId,
+                sessionId,
+                confirmationId,
                 orderId,
                 orderStatus,
                 WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        workflowRepository.save(entity);
 
-        workflows.put(workflowId, context);
+        log.info("Cancellation workflow started: workflowId={}, orderId={}, sessionId={}, confirmationId={}",
+                workflowId, orderId, sessionId, confirmationId);
 
-        return context;
+        return toContext(entity);
     }
 
     /**
      * Step 2: Resume workflow after human confirmation.
      */
-    public synchronized CancellationWorkflowContext confirmCancellation(String workflowId, boolean confirmed) {
+    @Transactional
+    public CancellationWorkflowContext confirmCancellation(String workflowId, boolean confirmed) {
 
-        var context = workflows.get(workflowId);
-        if (context == null) {
-            throw new IllegalArgumentException("Workflow not found: " + workflowId);
-        }
-        if (context.workflowStatus() != WorkflowStatus.WAITING_FOR_CONFIRMATION) {
+        var entity = workflowRepository.findById(workflowId)
+                .orElseThrow(() -> new IllegalArgumentException("Workflow not found: " + workflowId));
+
+        if (entity.getWorkflowStatus() != WorkflowStatus.WAITING_FOR_CONFIRMATION) {
             throw new IllegalStateException("Workflow is not waiting for confirmation");
         }
 
         // User rejected cancellation
         if (!confirmed) {
-            context.setWorkflowStatus(WorkflowStatus.CANCELLED);
-            return context;
+            entity.setWorkflowStatus(WorkflowStatus.CANCELLED);
+            workflowRepository.save(entity);
+            return toContext(entity);
         }
 
         // User confirmed cancellation
 
-        try {
-            // Re-check order status before cancellation
-            var currentStatus = orderStatusTool.getOrderStatus(context.orderId());
-            if (!CANCELLABLE_STATUS.contains(currentStatus)) {
-                context.setWorkflowStatus(WorkflowStatus.FAILED);
-                throw new IllegalStateException("Order can no longer be cancelled. Current status: " + currentStatus);
-            }
-
-            // Proceed with cancellation
-            orderCancelationTool.cancelOrder(context.orderId());
-
-            context.setWorkflowStatus(WorkflowStatus.COMPLETED);
-
-        } catch (RuntimeException e) {
-            context.setWorkflowStatus(WorkflowStatus.FAILED);
-            throw new IllegalStateException("Unable to cancel order: " + context.orderId(), e);
+        // Re-check order status before cancellation
+        var currentStatus = orderStatusTool.getOrderStatus(entity.getOrderId());
+        if (!CANCELLABLE_STATUS.contains(currentStatus)) {
+            entity.setWorkflowStatus(WorkflowStatus.FAILED);
+            workflowRepository.save(entity);
+            throw new IllegalStateException("Order can no longer be cancelled. Current status: " + currentStatus);
         }
 
-        return context;
+        try {
+            // Proceed with cancellation
+            orderCancelationTool.cancelOrder(entity.getOrderId());
+
+            entity.setWorkflowStatus(WorkflowStatus.COMPLETED);
+            workflowRepository.save(entity);
+
+        } catch (RuntimeException e) {
+            entity.setWorkflowStatus(WorkflowStatus.FAILED);
+            workflowRepository.save(entity);
+            throw new IllegalStateException("Unable to cancel order: " + entity.getOrderId(), e);
+        }
+
+        return toContext(entity);
+    }
+
+    @Transactional
+    public void cancelPendingWorkflow(String sessionId) {
+
+        var pendingWorkflows = workflowRepository.findAllBySessionIdAndWorkflowStatus(
+                sessionId,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
+        for (var entity : pendingWorkflows) {
+            entity.setWorkflowStatus(WorkflowStatus.CANCELLED);
+        }
+    }
+
+    private CancellationWorkflowContext toContext(CancellationWorkflowEntity entity) {
+        return new CancellationWorkflowContext(
+                entity.getWorkflowId(),
+                entity.getOrderId(),
+                entity.getOrderStatus(),
+                entity.getWorkflowStatus(),
+                entity.getConfirmationId());
     }
 }
