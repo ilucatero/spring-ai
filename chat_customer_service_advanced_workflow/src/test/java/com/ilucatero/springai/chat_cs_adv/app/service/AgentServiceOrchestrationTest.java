@@ -15,6 +15,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 
+import com.ilucatero.springai.chat_cs_adv.app.McpToolRegistry;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.IntentType;
@@ -29,7 +30,6 @@ import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatModel;
 import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatResponses;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
-import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceOrchestrationTest {
 

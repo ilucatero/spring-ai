@@ -17,6 +17,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
+import com.ilucatero.springai.chat_cs_adv.app.McpToolRegistry;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderUserActionConfirmation;
@@ -24,7 +25,6 @@ import com.ilucatero.springai.chat_cs_adv.app.model.UserIntent;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.repository.SystemPromptRepository;
-import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 @Service
 public class AgentService {

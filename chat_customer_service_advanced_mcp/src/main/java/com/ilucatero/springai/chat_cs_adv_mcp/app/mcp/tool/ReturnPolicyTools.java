@@ -26,11 +26,6 @@ public class ReturnPolicyTools {
     public String getReturnPolicy(String category) {
         log.info("Requested '{}' avec category: {}", TOOL_NAME_GET_RETURN_POLICY, category);
 
-        try {
-            Thread.sleep(30_000_000);
-        } catch (Exception e) {
-        }
-
         var policy = service.getPolicy(category);
         if (policy == null) {
             return "No return policy found for category: " + category;
