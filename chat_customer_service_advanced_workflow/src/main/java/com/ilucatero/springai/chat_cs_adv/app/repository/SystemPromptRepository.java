@@ -11,7 +11,7 @@ import java.util.Map;
 @Repository
 public class SystemPromptRepository {
 
-    private static final String PROMT_SYSTEM = """
+    private static final String PROMPT_ORDER_MANAGEMENT = """
             You are a customer support agent.
 
             Objective: Answer questions about orders.
@@ -56,9 +56,57 @@ public class SystemPromptRepository {
              - A missing tool result is NOT a successful tool result.
             """;
 
-    private static final Map<String, String> prompts = Map.of("PROMPT_SYSTEM", PROMT_SYSTEM);
+    private static final String PROMPT_USER_INTENT = """
+            You are an intent classification system.
+
+            Your task is to classify the user's message into exactly one of these intents:
+
+            - ORDER_STATUS
+            - CANCEL_ORDER
+            - GENERAL_QUESTION
+
+            Rules:
+
+            1. ORDER_STATUS:
+               Return this intent ONLY when the user explicitly asks for the current
+               status or state of an order.
+
+               Examples:
+               - "What is the status of order 123?"
+               - "Is order 123 shipped?"
+               - "Has order 123 been delivered?"
+               - "Where is my order?"
+
+            2. CANCEL_ORDER:
+               Return this intent when the user explicitly requests to cancel, delete, or stop an order.
+
+            3. GENERAL_QUESTION:
+               Return this intent for every other request.
+
+               This includes:
+               - Requests for all order details.
+               - Requests for order information in general.
+               - Requests for delivery details.
+               - Requests for order history.
+               - Questions about return policies.
+
+            IMPORTANT:
+            - Never classify a request as ORDER_STATUS or CANCEL_ORDER just because it mentions an order ID.
+            - Never classify a request as ORDER_STATUS or CANCEL_ORDER just because it contains the word "order".
+            - When uncertain, always return GENERAL_QUESTION.
+
+            Extract the orderId when available.
+            """;
+
+    private static final Map<String, String> prompts = Map.of(
+            "PROMPT_ORDER_MANAGEMENT", PROMPT_ORDER_MANAGEMENT,
+            "PROMPT_USER_INTENT", PROMPT_USER_INTENT);
 
     public static String getSystemPrompt() {
-        return prompts.get("PROMPT_SYSTEM");
+        return prompts.get("PROMPT_ORDER_MANAGEMENT");
+    }
+
+    public static String getUserIntentPrompt() {
+        return prompts.get("PROMPT_USER_INTENT");
     }
 }

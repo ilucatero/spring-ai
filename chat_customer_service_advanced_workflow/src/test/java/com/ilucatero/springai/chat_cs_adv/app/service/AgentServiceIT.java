@@ -4,6 +4,8 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
+import com.ilucatero.springai.chat_cs_adv.app.model.IntentType;
+import com.ilucatero.springai.chat_cs_adv.app.model.UserIntent;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
 
 import org.junit.jupiter.api.AfterAll;
@@ -19,14 +21,16 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-// todo : to reactiavate mcp-client when autostart for IT is configured
 @SpringBootTest(properties = "spring.ai.mcp.client.enabled=false")
 @Import(AgentServiceIT.NoMcpServerConfiguration.class)
 class AgentServiceIT {
@@ -36,7 +40,6 @@ class AgentServiceIT {
     @TestConfiguration(proxyBeanMethods = false)
     static class NoMcpServerConfiguration {
 
-        /** Send an empty array of ToolCallbacks */
         @Bean
         @Primary
         SyncMcpToolCallbackProvider syncMcpToolCallbackProvider() {
@@ -49,6 +52,9 @@ class AgentServiceIT {
     @Autowired
     private AgentService agentService;
 
+    @MockitoBean
+    private IntentService intentService;
+
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         wireMock.start();
@@ -56,7 +62,9 @@ class AgentServiceIT {
         registry.add(
                 "spring.ai.openai.base-url",
                 () -> "http://localhost:" + wireMock.port());
+
         registry.add("spring.ai.openai.api-key", () -> "test-key");
+
         registry.add(
                 "spring.ai.openai.chat.model",
                 () -> "gpt-4o-mini");
@@ -71,6 +79,12 @@ class AgentServiceIT {
     void configureModelResponses() {
 
         wireMock.resetAll();
+
+        when(intentService.detectIntent(anyString(), any()))
+                .thenReturn(new UserIntent(
+                        IntentType.GENERAL_QUESTION,
+                        "123",
+                        null));
 
         wireMock.stubFor(post(urlPathEqualTo("/chat/completions"))
                 .inScenario("order-status")
@@ -114,7 +128,7 @@ class AgentServiceIT {
                             "index": 0,
                             "message": {
                               "role": "assistant",
-                              "content": "Le statut de la commande 123 est PROCESSING."
+                              "content": "La commande 123 est en cours de traitement."
                             },
                             "finish_reason": "stop"
                           }]
@@ -123,31 +137,22 @@ class AgentServiceIT {
     }
 
     @Test
-    void shouldOnlyCallOrderStatusToolWhenAskingForStatus() {
+    void shouldCallOrderStatusToolForGeneralQuestion() {
+
         // Given
         var request = new AgentRequest(
-                "Quel est le statut de la commande 123 ?",
+                "Donne-moi les informations de ma commande 123.",
                 null);
 
         // When
         var response = agentService.executeTask(request);
 
-        System.out.println("STATUS = " + response.status());
-        System.out.println("MESSAGE = " + response.answer());
-        System.out.println("WIREMOCK EVENTS = " + wireMock.getAllServeEvents().size());
-        wireMock.getAllServeEvents().forEach(event -> {
-            System.out.println("URL: " + event.getRequest().getUrl());
-            System.out.println("METHOD: " + event.getRequest().getMethod());
-            System.out.println("BODY: " + event.getRequest().getBodyAsString());
-            System.out.println("STATUS: " + event.getResponse().getStatus());
-            System.out.println("UNMATCHED: " + event.getWasMatched());
-        });
-        System.out.println("UNMATCHED REQUESTS:");
-        wireMock.findAllUnmatchedRequests().forEach(System.out::println);
-
         // Then
         assertThat(response.status())
                 .isEqualTo(AgentResponse.Status.COMPLETED);
+
+        assertThat(response.answer())
+                .contains("commande 123");
 
         assertThat(response.toolExecutions())
                 .extracting("toolName")
@@ -156,8 +161,6 @@ class AgentServiceIT {
         assertThat(response.toolExecutions().get(0).arguments())
                 .anyMatch(arg -> arg.contains("123"));
 
-        // Vérifie que le serveur simulé a reçu deux requêtes :
-        // une pour demander le tool, une pour produire la réponse finale.
         wireMock.verify(2, postRequestedFor(
                 urlPathEqualTo("/chat/completions")));
     }

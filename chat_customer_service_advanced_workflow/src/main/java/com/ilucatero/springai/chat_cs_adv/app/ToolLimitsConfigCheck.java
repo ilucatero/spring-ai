@@ -1,4 +1,4 @@
-package com.ilucatero.springai.chat_cs_adv.config;
+package com.ilucatero.springai.chat_cs_adv.app;
 
 import java.util.stream.Collectors;
 

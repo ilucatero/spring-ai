@@ -1,5 +1,7 @@
 package com.ilucatero.springai.chat_cs_adv_mcp.app.mcp.tool;
 
+import java.time.Duration;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;

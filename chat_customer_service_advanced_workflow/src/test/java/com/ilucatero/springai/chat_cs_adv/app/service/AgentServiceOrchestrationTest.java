@@ -1,6 +1,7 @@
 package com.ilucatero.springai.chat_cs_adv.app.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -14,20 +15,21 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 
+import com.ilucatero.springai.chat_cs_adv.app.McpToolRegistry;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
+import com.ilucatero.springai.chat_cs_adv.app.model.IntentType;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
+import com.ilucatero.springai.chat_cs_adv.app.model.UserIntent;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
 import com.ilucatero.springai.chat_cs_adv.app.service.DeliveryAssessmentService.DeliveryAssessment;
 import com.ilucatero.springai.chat_cs_adv.app.support.FakeReturnPolicyTool;
 import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatModel;
 import com.ilucatero.springai.chat_cs_adv.app.support.ScriptedChatResponses;
-import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
-import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceOrchestrationTest {
 
@@ -37,6 +39,8 @@ class AgentServiceOrchestrationTest {
     DefaultToolCallingManager toolCallingManager;
     DeliveryAssessmentService deliveryAssessmentService;
     OrderToolSet orderToolSet;
+    OrderCancellationWorkflowService cancellationWorkflowService;
+    IntentService intentService;
 
     @BeforeEach
     void setUp() {
@@ -52,9 +56,14 @@ class AgentServiceOrchestrationTest {
         var orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
                 deliveryAssessmentService);
         var orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
-        var orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
-        orderToolSet = new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool,
-                orderCancelationTool);
+        orderToolSet = new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool);
+
+        intentService = mock(IntentService.class);
+        when(intentService.detectIntent(anyString(), anyList()))
+                .thenReturn(new UserIntent(IntentType.GENERAL_QUESTION, null, null));
+
+        cancellationWorkflowService = mock(OrderCancellationWorkflowService.class);
+
     }
 
     @Test
@@ -208,7 +217,9 @@ class AgentServiceOrchestrationTest {
                 orderRepository,
                 toolCallingManager,
                 orderToolSet,
-                mcpTools);
+                mcpTools,
+                intentService,
+                cancellationWorkflowService);
     }
 
 }

@@ -1,4 +1,4 @@
-package com.ilucatero.springai.chat_cs_adv.config;
+package com.ilucatero.springai.chat_cs_adv.app;
 
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +12,8 @@ import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.tool.ToolCallback;
 
+import com.ilucatero.springai.chat_cs_adv.app.service.McpToolRetryExecutor;
+
 import io.modelcontextprotocol.client.McpSyncClient;
 
 public class McpToolRegistry {
@@ -19,12 +21,14 @@ public class McpToolRegistry {
     private static final Logger log = LoggerFactory.getLogger(McpToolRegistry.class);
 
     private final List<McpSyncClient> clients;
+    private final McpToolRetryExecutor retryExecutor;
 
     /** Cache discovered MCPTools of clients to avoir initialize it on each call. */
     private final Map<McpSyncClient, ToolCallback[]> cachedCallbacks = new ConcurrentHashMap<>();
 
-    public McpToolRegistry(List<McpSyncClient> clients) {
+    public McpToolRegistry(List<McpSyncClient> clients, McpToolRetryExecutor retryExecutor) {
         this.clients = clients;
+        this.retryExecutor = retryExecutor;
     }
 
     public ToolCallback[] getToolCallbacks() {
@@ -42,12 +46,7 @@ public class McpToolRegistry {
     }
 
     private ToolCallback[] discoverCallbacks(McpSyncClient client) {
-        if (client.getCurrentInitializationResult() == null) {
-            client.initialize();
-        }
-
-        var tools = SyncMcpToolCallbackProvider
-                .syncToolCallbacks(List.of(client))
+        var tools = initializeClient(client)
                 .stream()
                 .map(callback -> withLogging(client, callback))
                 .toArray(ToolCallback[]::new);
@@ -56,8 +55,19 @@ public class McpToolRegistry {
         return tools;
     }
 
+    private List<ToolCallback> initializeClient(McpSyncClient client) {
+        return retryExecutor.execute(() -> {
+            if (client.getCurrentInitializationResult() == null) {
+                client.initialize();
+            }
+
+            return SyncMcpToolCallbackProvider.syncToolCallbacks(List.of(client));
+        });
+    }
+
     private ToolCallback withLogging(McpSyncClient client, ToolCallback delegate) {
         return new ToolCallbackWithLogging(
+                retryExecutor,
                 delegate,
                 () -> invalidate(client));
     }
@@ -72,12 +82,14 @@ public class McpToolRegistry {
 
         private static final Logger log = LoggerFactory.getLogger(ToolCallbackWithLogging.class);
 
+        private final McpToolRetryExecutor retryExecutor;
         private final ToolCallback delegate;
         private final Runnable invalidateCache;
 
-        ToolCallbackWithLogging(ToolCallback delegate, Runnable invalidateCache) {
+        ToolCallbackWithLogging(McpToolRetryExecutor retryExecutor, ToolCallback delegate, Runnable invalidateCache) {
             this.delegate = delegate;
             this.invalidateCache = invalidateCache;
+            this.retryExecutor = retryExecutor;
         }
 
         @Override
@@ -107,7 +119,7 @@ public class McpToolRegistry {
             log.debug("MCP tool call: name={}", name);
 
             try {
-                var result = action.get();
+                var result = retryExecutor.execute(action);
 
                 var elapsedMs = (System.nanoTime() - start) / 1_000_000;
                 log.info("MCP tool completed: name={}, durationMs={}", name, elapsedMs);

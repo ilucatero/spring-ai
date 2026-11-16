@@ -24,16 +24,17 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 
+import com.ilucatero.springai.chat_cs_adv.app.McpToolRegistry;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentRequest;
 import com.ilucatero.springai.chat_cs_adv.app.model.AgentResponse;
+import com.ilucatero.springai.chat_cs_adv.app.model.IntentType;
 import com.ilucatero.springai.chat_cs_adv.app.model.Order;
 import com.ilucatero.springai.chat_cs_adv.app.model.OrderToolSet;
 import com.ilucatero.springai.chat_cs_adv.app.model.ToolExecutionInfo;
+import com.ilucatero.springai.chat_cs_adv.app.model.UserIntent;
 import com.ilucatero.springai.chat_cs_adv.app.repository.OrderRepository;
-import com.ilucatero.springai.chat_cs_adv.app.tool.OrderCancelationTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderDeliveranceTool;
 import com.ilucatero.springai.chat_cs_adv.app.tool.OrderStatusTool;
-import com.ilucatero.springai.chat_cs_adv.config.McpToolRegistry;
 
 class AgentServiceTest {
 
@@ -73,19 +74,27 @@ class AgentServiceTest {
         toolExecutionRecorder = new ToolExecutionInfo.Recorder();
 
         var orderStatusTool = new OrderStatusTool(toolExecutionRecorder, orderRepository);
-        var orderCancelationTool = new OrderCancelationTool(toolExecutionRecorder, orderRepository);
 
         var DeliveryAssessmentService = mock(DeliveryAssessmentService.class);
         var orderDeliveranceTool = new OrderDeliveranceTool(toolExecutionRecorder, orderRepository,
                 DeliveryAssessmentService);
+
+        var intentService = mock(IntentService.class);
+        when(intentService.detectIntent(anyString(), anyList())).thenReturn(new UserIntent(IntentType.GENERAL_QUESTION, null, null));
+
+        var cancellationWorkflowService = mock(OrderCancellationWorkflowService.class);
+        when(cancellationWorkflowService.getConfirmation(anyString(), anyString()))
+                .thenThrow(new IllegalArgumentException("Invalid confirmation"));
 
         agentService = new AgentService(
                 chatClientBuilder,
                 mock(ChatMemory.class),
                 orderRepository,
                 toolCallingManager,
-                new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool, orderCancelationTool),
-                mcpToolRegistry);
+                new OrderToolSet(toolExecutionRecorder, orderStatusTool, orderDeliveranceTool),
+                mcpToolRegistry,
+                intentService,
+                cancellationWorkflowService);
 
     }
 
