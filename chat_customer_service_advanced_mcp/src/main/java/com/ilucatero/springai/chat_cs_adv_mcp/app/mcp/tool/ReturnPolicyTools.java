@@ -1,5 +1,7 @@
 package com.ilucatero.springai.chat_cs_adv_mcp.app.mcp.tool;
 
+import java.time.Duration;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -23,6 +25,11 @@ public class ReturnPolicyTools {
     @McpTool(name = TOOL_NAME_GET_RETURN_POLICY, description = "Get the return policy for a product category")
     public String getReturnPolicy(String category) {
         log.info("Requested '{}' avec category: {}", TOOL_NAME_GET_RETURN_POLICY, category);
+
+        try {
+            Thread.sleep(30_000_000);
+        } catch (Exception e) {
+        }
 
         var policy = service.getPolicy(category);
         if (policy == null) {
