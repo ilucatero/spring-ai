@@ -292,6 +292,48 @@ class OrderCancellationWorkflowServiceTest {
         verifyNoInteractions(orderStatusTool, orderCancelationTool);
     }
 
+    @Test
+    void shouldNotCancelOrderTwiceForSameConfirmation() {
+        // Given
+        var context = newContext(
+                ORDER_ID,
+                Order.Status.PROCESSING,
+                WorkflowStatus.WAITING_FOR_CONFIRMATION);
+
+        var initialEntity = newEntity(context, WorkflowStatus.WAITING_FOR_CONFIRMATION);
+        var completedEntity = newEntity(context, WorkflowStatus.COMPLETED);
+
+        when(workflowRepository.findById(context.workflowId()))
+                .thenReturn(
+                        Optional.of(initialEntity),
+                        Optional.of(completedEntity),
+                        Optional.of(completedEntity));
+
+        when(stateService.transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING))
+                .thenReturn(true);
+
+        when(orderStatusTool.getOrderStatus(context.orderId()))
+                .thenReturn(Order.Status.PROCESSING);
+
+        // When
+        // first confirmation
+        workflowService.confirmCancellation(context.workflowId(), true);
+        // Second confirmation
+        assertThrows(IllegalStateException.class,
+                () -> workflowService.confirmCancellation(context.workflowId(), true));
+
+        // Then
+        verify(orderCancelationTool).cancelOrder(context.orderId());
+        verify(stateService).transition(
+                context.workflowId(),
+                WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                WorkflowStatus.CANCELLING);
+        verify(orderStatusTool).getOrderStatus(context.orderId());
+    }
+
     private CancellationWorkflowEntity newEntity(
             CancellationWorkflowContext context,
             WorkflowStatus workflowStatus) {
@@ -317,4 +359,5 @@ class OrderCancellationWorkflowServiceTest {
                 workflowStatus,
                 "confirmation-1");
     }
+
 }
